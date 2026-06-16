@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { formatAud } from "@/lib/format";
 
 interface PosOrder {
   id: string;
   ticketNumber: number | null;
   status: string;
   paymentStatus: string;
-  total: string;
+  fulfillmentType?: string;
+  total: string | number;
   createdAt: string;
 }
 
@@ -54,10 +56,13 @@ export default function OrdersPage(): React.ReactElement {
                   Ticket #{order.ticketNumber ?? "—"}
                 </p>
                 <p className="text-sm text-outline">
-                  {order.status} · {order.paymentStatus}
+                  {order.fulfillmentType ?? "PICKUP"} · {order.status} ·{" "}
+                  {order.paymentStatus}
                 </p>
               </div>
-              <p className="text-lg font-semibold">${order.total}</p>
+              <p className="text-lg font-semibold">
+                {formatAud(order.total)}
+              </p>
             </article>
           ))
         )}

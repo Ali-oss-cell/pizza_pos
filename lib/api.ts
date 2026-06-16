@@ -1,20 +1,55 @@
+import type { PosUser } from "@/types/auth";
+
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
+
+const TOKEN_KEY = "pos_token";
+const USER_KEY = "pos_user";
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") {
     return null;
   }
 
-  return localStorage.getItem("pos_token");
+  return localStorage.getItem(TOKEN_KEY);
 }
 
-export function setAuthToken(token: string): void {
-  localStorage.setItem("pos_token", token);
+export function getStoredUser(): PosUser | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = localStorage.getItem(USER_KEY);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as PosUser;
+  } catch {
+    return null;
+  }
 }
 
-export function clearAuthToken(): void {
-  localStorage.removeItem("pos_token");
+export function setAuthSession(token: string, user: PosUser): void {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+export function clearAuthSession(): void {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
 }
 
 export async function apiFetch<T>(
@@ -24,7 +59,9 @@ export async function apiFetch<T>(
   const token = getAuthToken();
   const headers = new Headers(options.headers);
 
-  headers.set("Content-Type", "application/json");
+  if (!(options.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
 
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -36,8 +73,28 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed (${response.status})`);
+    const text = await response.text();
+    let message = `Request failed (${response.status})`;
+
+    try {
+      const body = JSON.parse(text) as { message?: string | string[] };
+
+      if (typeof body.message === "string") {
+        message = body.message;
+      } else if (Array.isArray(body.message)) {
+        message = body.message.join(", ");
+      }
+    } catch {
+      if (text) {
+        message = text;
+      }
+    }
+
+    throw new ApiError(message, response.status);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return response.json() as Promise<T>;
