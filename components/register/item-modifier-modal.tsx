@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Minus, Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import {
   buildLineDetail,
@@ -61,6 +61,7 @@ export function ItemModifierModal({
   const [quantity, setQuantity] = useState(1);
   const [unitPrice, setUnitPrice] = useState(() => getDisplayPrice(item));
   const [quoting, setQuoting] = useState(false);
+  const quoteRequestRef = useRef(0);
 
   useEffect(() => {
     if (!open) {
@@ -80,34 +81,43 @@ export function ItemModifierModal({
       return;
     }
 
-    const timer = window.setTimeout(() => {
-      setQuoting(true);
-      void apiFetch<QuoteResult>("/pos/orders/quote", {
-        method: "POST",
-        body: JSON.stringify({
-          items: [
-            {
-              menuItemId: item.id,
-              quantity: 1,
-              size: showSizes ? size : undefined,
-              crust: showCrust && crustId ? crustId : undefined,
-              toppingIds: toppingIds.length > 0 ? toppingIds : undefined,
-              removedIngredients:
-                removedIngredients.length > 0 ? removedIngredients : undefined,
-            },
-          ],
-        }),
-      })
-        .then((quote) => {
-          setUnitPrice(quote.lines[0]?.unitPrice ?? getDisplayPrice(item, size));
-        })
-        .catch(() => {
-          setUnitPrice(getDisplayPrice(item, size));
-        })
-        .finally(() => setQuoting(false));
-    }, 200);
+    const requestId = quoteRequestRef.current + 1;
+    quoteRequestRef.current = requestId;
+    setQuoting(true);
 
-    return () => window.clearTimeout(timer);
+    void apiFetch<QuoteResult>("/pos/orders/quote", {
+      method: "POST",
+      body: JSON.stringify({
+        items: [
+          {
+            menuItemId: item.id,
+            quantity: 1,
+            size: showSizes ? size : undefined,
+            crust: showCrust && crustId ? crustId : undefined,
+            toppingIds: toppingIds.length > 0 ? toppingIds : undefined,
+            removedIngredients:
+              removedIngredients.length > 0 ? removedIngredients : undefined,
+          },
+        ],
+      }),
+    })
+      .then((quote) => {
+        if (quoteRequestRef.current !== requestId) {
+          return;
+        }
+        setUnitPrice(quote.lines[0]?.unitPrice ?? getDisplayPrice(item, size));
+      })
+      .catch(() => {
+        if (quoteRequestRef.current !== requestId) {
+          return;
+        }
+        setUnitPrice(getDisplayPrice(item, size));
+      })
+      .finally(() => {
+        if (quoteRequestRef.current === requestId) {
+          setQuoting(false);
+        }
+      });
   }, [
     open,
     item.id,
