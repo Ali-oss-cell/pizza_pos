@@ -2,8 +2,12 @@ export interface CartLine {
   key: string;
   menuItemId: string;
   name: string;
+  detail?: string;
   quantity: number;
   size?: string;
+  crust?: string;
+  toppingIds: string[];
+  removedIngredients: string[];
   unitPrice: number;
 }
 
@@ -14,6 +18,9 @@ export interface QuoteLine {
   unitPrice: number;
   lineTotal: number;
   size?: string;
+  crust?: string;
+  toppingIds?: string[];
+  removedIngredients?: string[];
 }
 
 export interface QuoteResult {
@@ -26,3 +33,12 @@ export interface QuoteResult {
 }
 
 export type FulfillmentType = "PICKUP" | "DINE_IN" | "COUNTER";
+
+export interface QuoteItemInput {
+  menuItemId: string;
+  quantity: number;
+  size?: string;
+  crust?: string;
+  toppingIds?: string[];
+  removedIngredients?: string[];
+}

@@ -1,26 +1,9 @@
 import type { MenuCategory, MenuItem } from "@/types/menu";
 
-export type ModifierFlow = "none" | "modal";
-
+/** Every menu item opens the full customization sheet (same as the website). */
 export function resolveItemTapFlow(
-  item: MenuItem,
-  category: MenuCategory | undefined,
-): ModifierFlow {
-  if (!category) {
-    return "none";
-  }
-
-  if (category.supportsSizeOptions && item.sizeOptions) {
-    return "modal";
-  }
-
-  if (category.supportsExtras) {
-    return "modal";
-  }
-
-  if (item.ingredients.length > 0) {
-    return "modal";
-  }
-
-  return "none";
+  _item: MenuItem,
+  _category: MenuCategory | undefined,
+): "modal" {
+  return "modal";
 }

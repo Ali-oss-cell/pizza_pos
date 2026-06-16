@@ -121,6 +121,11 @@ export function CurrentOrderSidebar({
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="font-bold leading-snug">{line.name}</p>
+                    {line.detail ? (
+                      <p className="mt-0.5 text-xs font-medium text-outline">
+                        {line.detail}
+                      </p>
+                    ) : null}
                     <p className="mt-0.5 text-sm font-medium text-outline">
                       {formatAud(line.unitPrice)} each
                     </p>

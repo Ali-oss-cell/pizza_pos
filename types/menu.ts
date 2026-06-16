@@ -36,5 +36,6 @@ export interface MenuItem {
     large?: number;
     family?: number;
   } | null;
+  allowedToppingIds?: string[];
   isActive: boolean;
 }

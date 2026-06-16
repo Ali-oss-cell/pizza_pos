@@ -9,10 +9,7 @@ export function fetchMenuItems(): Promise<MenuItem[]> {
   return apiFetch<MenuItem[]>("/menu");
 }
 
-export function getDisplayPrice(
-  item: MenuItem,
-  size?: string,
-): number {
+export function getDisplayPrice(item: MenuItem, size?: string): number {
   if (size && item.sizeOptions) {
     const key = normalizeSizeKey(size);
     const option = item.sizeOptions[key];
@@ -49,11 +46,4 @@ function normalizeSizeKey(size: string): keyof SizeOptions {
   }
 
   return "large";
-}
-
-export function buildCartLineKey(
-  menuItemId: string,
-  size?: string,
-): string {
-  return size ? `${menuItemId}:${size}` : menuItemId;
 }

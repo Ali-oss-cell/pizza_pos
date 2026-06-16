@@ -4,16 +4,28 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CurrentOrderSidebar } from "@/components/register/current-order-sidebar";
 import { ItemModifierModal } from "@/components/register/item-modifier-modal";
 import { apiFetch } from "@/lib/api";
-import { formatAud } from "@/lib/format";
-import { resolveItemTapFlow } from "@/lib/item-modifiers";
 import {
   buildCartLineKey,
-  fetchMenuCategories,
-  fetchMenuItems,
-  getDisplayPrice,
-} from "@/lib/menu";
+  buildLineDetail,
+  type CartAddPayload,
+} from "@/lib/cart-lines";
+import {
+  categoryHasExtras,
+  fetchCrustOptions,
+  fetchToppingGroups,
+  filterToppingsForItem,
+  mapApiCrusts,
+} from "@/lib/customizations";
+import { formatAud } from "@/lib/format";
+import { fetchMenuCategories, fetchMenuItems, getDisplayPrice } from "@/lib/menu";
 import { cn } from "@/lib/utils";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
+import type {
+  ApiCrustOption,
+  CrustOption,
+  ToppingCategory,
+  ToppingCategoryGroup,
+} from "@/types/customizations";
 import type { MenuCategory, MenuItem } from "@/types/menu";
 
 interface PosOrder {
@@ -25,11 +37,17 @@ interface PosOrder {
 interface ModifierState {
   item: MenuItem;
   category: MenuCategory | undefined;
+  crustOptions: CrustOption[];
+  toppingCategories: ToppingCategory[];
 }
 
 export default function RegisterPage(): React.ReactElement {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
+  const [toppingGroups, setToppingGroups] = useState<ToppingCategoryGroup[]>(
+    [],
+  );
+  const [apiCrusts, setApiCrusts] = useState<ApiCrustOption[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [quote, setQuote] = useState<QuoteResult | null>(null);
@@ -45,8 +63,13 @@ export default function RegisterPage(): React.ReactElement {
   const [lastTicket, setLastTicket] = useState<number | null>(null);
 
   useEffect(() => {
-    void Promise.all([fetchMenuCategories(), fetchMenuItems()])
-      .then(([nextCategories, nextItems]) => {
+    void Promise.all([
+      fetchMenuCategories(),
+      fetchMenuItems(),
+      fetchToppingGroups(),
+      fetchCrustOptions(),
+    ])
+      .then(([nextCategories, nextItems, nextToppings, nextCrusts]) => {
         const activeCategories = nextCategories
           .filter((category) => category.isActive)
           .sort(
@@ -55,7 +78,16 @@ export default function RegisterPage(): React.ReactElement {
           );
 
         setCategories(activeCategories);
-        setItems(nextItems.filter((item) => item.isActive));
+        setItems(
+          nextItems
+            .filter((item) => item.isActive)
+            .map((item) => ({
+              ...item,
+              allowedToppingIds: item.allowedToppingIds ?? [],
+            })),
+        );
+        setToppingGroups(nextToppings);
+        setApiCrusts(nextCrusts);
         setActiveCategory(activeCategories[0]?.slug ?? "");
         setLoadError(null);
       })
@@ -67,9 +99,9 @@ export default function RegisterPage(): React.ReactElement {
       .finally(() => setLoading(false));
   }, []);
 
-  const categoryMap = useMemo(
-    () => new Map(categories.map((category) => [category.slug, category])),
-    [categories],
+  const crustOptions = useMemo(
+    () => mapApiCrusts(apiCrusts),
+    [apiCrusts],
   );
 
   const visibleItems = useMemo(
@@ -93,6 +125,12 @@ export default function RegisterPage(): React.ReactElement {
           menuItemId: line.menuItemId,
           quantity: line.quantity,
           size: line.size,
+          crust: line.crust,
+          toppingIds: line.toppingIds.length > 0 ? line.toppingIds : undefined,
+          removedIngredients:
+            line.removedIngredients.length > 0
+              ? line.removedIngredients
+              : undefined,
         })),
       }),
     });
@@ -117,10 +155,37 @@ export default function RegisterPage(): React.ReactElement {
     return () => window.clearTimeout(timer);
   }, [cart, refreshQuote]);
 
-  function addToCart(item: MenuItem, options?: { size?: string }) {
-    const size = options?.size;
-    const key = buildCartLineKey(item.id, size);
-    const unitPrice = getDisplayPrice(item, size);
+  function openModifier(item: MenuItem) {
+    const category = categories.find(
+      (entry) => entry.slug === item.categorySlug,
+    );
+    const showSize = Boolean(category?.supportsSizeOptions && item.sizeOptions);
+    const showExtras = categoryHasExtras(item.categorySlug, categories);
+
+    setModifierState({
+      item,
+      category,
+      crustOptions: showSize ? crustOptions : [],
+      toppingCategories: showExtras
+        ? filterToppingsForItem(toppingGroups, item.allowedToppingIds ?? [])
+        : [],
+    });
+  }
+
+  function addToCart(payload: CartAddPayload) {
+    const key = buildCartLineKey({
+      menuItemId: payload.menuItemId,
+      size: payload.size,
+      crust: payload.crust,
+      toppingIds: payload.toppingIds,
+      removedIngredients: payload.removedIngredients,
+    });
+
+    const detail = buildLineDetail({
+      crustLabel: payload.crustLabel,
+      toppingLabels: payload.toppingLabels,
+      removedIngredients: payload.removedIngredients,
+    });
 
     setCart((current) => {
       const existing = current.find((line) => line.key === key);
@@ -128,7 +193,7 @@ export default function RegisterPage(): React.ReactElement {
       if (existing) {
         return current.map((line) =>
           line.key === key
-            ? { ...line, quantity: line.quantity + 1 }
+            ? { ...line, quantity: line.quantity + payload.quantity }
             : line,
         );
       }
@@ -137,27 +202,19 @@ export default function RegisterPage(): React.ReactElement {
         ...current,
         {
           key,
-          menuItemId: item.id,
-          name: size ? `${item.name} (${size})` : item.name,
-          quantity: 1,
-          size,
-          unitPrice,
+          menuItemId: payload.menuItemId,
+          name: payload.name,
+          detail,
+          quantity: payload.quantity,
+          size: payload.size,
+          crust: payload.crust,
+          toppingIds: payload.toppingIds,
+          removedIngredients: payload.removedIngredients,
+          unitPrice: payload.unitPrice,
         },
       ];
     });
     setPayError(null);
-  }
-
-  function handleMenuItemTap(item: MenuItem) {
-    const category = categoryMap.get(item.categorySlug);
-    const flow = resolveItemTapFlow(item, category);
-
-    if (flow === "modal") {
-      setModifierState({ item, category });
-      return;
-    }
-
-    addToCart(item);
   }
 
   function incrementLine(key: string) {
@@ -206,6 +263,12 @@ export default function RegisterPage(): React.ReactElement {
             menuItemId: line.menuItemId,
             quantity: line.quantity,
             size: line.size,
+            crust: line.crust,
+            toppingIds: line.toppingIds.length > 0 ? line.toppingIds : undefined,
+            removedIngredients:
+              line.removedIngredients.length > 0
+                ? line.removedIngredients
+                : undefined,
           })),
           fulfillmentType,
         }),
@@ -274,7 +337,7 @@ export default function RegisterPage(): React.ReactElement {
                 key={item.id}
                 className="flex min-h-item-card flex-col items-center justify-center rounded-2xl bg-surface px-3 py-4 text-center transition active:scale-[0.98] active:bg-surface-container-high"
                 type="button"
-                onClick={() => handleMenuItemTap(item)}
+                onClick={() => openModifier(item)}
               >
                 <p className="text-pos-item leading-snug">{item.name}</p>
                 <p className="mt-2 text-pos-price text-accent">
@@ -304,10 +367,12 @@ export default function RegisterPage(): React.ReactElement {
 
       {modifierState ? (
         <ItemModifierModal
+          crustOptions={modifierState.crustOptions}
           category={modifierState.category}
           item={modifierState.item}
           open={Boolean(modifierState)}
-          onAdd={(options) => addToCart(modifierState.item, options)}
+          toppingCategories={modifierState.toppingCategories}
+          onAdd={addToCart}
           onClose={() => setModifierState(null)}
         />
       ) : null}
