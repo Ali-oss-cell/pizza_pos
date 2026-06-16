@@ -1,10 +1,11 @@
 "use client";
 
-import { CreditCard, HandCoins, Minus, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SizePickerDialog } from "@/components/register/size-picker-dialog";
+import { CurrentOrderSidebar } from "@/components/register/current-order-sidebar";
+import { ItemModifierModal } from "@/components/register/item-modifier-modal";
 import { apiFetch } from "@/lib/api";
 import { formatAud } from "@/lib/format";
+import { resolveItemTapFlow } from "@/lib/item-modifiers";
 import {
   buildCartLineKey,
   fetchMenuCategories,
@@ -21,6 +22,11 @@ interface PosOrder {
   total: string | number;
 }
 
+interface ModifierState {
+  item: MenuItem;
+  category: MenuCategory | undefined;
+}
+
 export default function RegisterPage(): React.ReactElement {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -29,7 +35,9 @@ export default function RegisterPage(): React.ReactElement {
   const [quote, setQuote] = useState<QuoteResult | null>(null);
   const [fulfillmentType, setFulfillmentType] =
     useState<FulfillmentType>("PICKUP");
-  const [sizePickerItem, setSizePickerItem] = useState<MenuItem | null>(null);
+  const [modifierState, setModifierState] = useState<ModifierState | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
@@ -109,7 +117,8 @@ export default function RegisterPage(): React.ReactElement {
     return () => window.clearTimeout(timer);
   }, [cart, refreshQuote]);
 
-  function addToCart(item: MenuItem, size?: string) {
+  function addToCart(item: MenuItem, options?: { size?: string }) {
+    const size = options?.size;
     const key = buildCartLineKey(item.id, size);
     const unitPrice = getDisplayPrice(item, size);
 
@@ -139,27 +148,40 @@ export default function RegisterPage(): React.ReactElement {
     setPayError(null);
   }
 
-  function handleItemClick(item: MenuItem) {
+  function handleMenuItemTap(item: MenuItem) {
     const category = categoryMap.get(item.categorySlug);
+    const flow = resolveItemTapFlow(item, category);
 
-    if (category?.supportsSizeOptions && item.sizeOptions) {
-      setSizePickerItem(item);
+    if (flow === "modal") {
+      setModifierState({ item, category });
       return;
     }
 
     addToCart(item);
   }
 
-  function updateQuantity(key: string, delta: number) {
+  function incrementLine(key: string) {
+    setCart((current) =>
+      current.map((line) =>
+        line.key === key ? { ...line, quantity: line.quantity + 1 } : line,
+      ),
+    );
+  }
+
+  function decrementLine(key: string) {
     setCart((current) =>
       current
         .map((line) =>
           line.key === key
-            ? { ...line, quantity: line.quantity + delta }
+            ? { ...line, quantity: line.quantity - 1 }
             : line,
         )
         .filter((line) => line.quantity > 0),
     );
+  }
+
+  function removeLine(key: string) {
+    setCart((current) => current.filter((line) => line.key !== key));
   }
 
   function clearCart() {
@@ -226,17 +248,17 @@ export default function RegisterPage(): React.ReactElement {
 
   return (
     <>
-      <section className="grid min-h-[70vh] gap-4 lg:grid-cols-[2fr_1fr]">
-        <div className="rounded-2xl bg-surface-container p-4">
-          <div className="mb-4 flex flex-wrap gap-2">
+      <section className="grid h-full min-h-0 flex-1 gap-2 md:grid-cols-[1.55fr_1fr] md:gap-3">
+        <div className="flex min-h-0 flex-col rounded-2xl bg-surface-container p-2 sm:p-3">
+          <div className="pos-scrollbar mb-3 flex gap-2 overflow-x-auto pb-1">
             {categories.map((category) => (
               <button
                 key={category.slug}
                 className={cn(
-                  "min-h-touch rounded-lg px-5 py-3 font-medium",
+                  "min-h-category-tab shrink-0 rounded-xl px-6 text-base font-bold",
                   activeCategory === category.slug
-                    ? "bg-accent text-white"
-                    : "bg-surface-container-high",
+                    ? "bg-accent text-white shadow-sm shadow-accent/25"
+                    : "bg-surface-container-high text-on-surface",
                 )}
                 type="button"
                 onClick={() => setActiveCategory(category.slug)}
@@ -246,17 +268,16 @@ export default function RegisterPage(): React.ReactElement {
             ))}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="pos-scrollbar grid flex-1 grid-cols-2 gap-2.5 overflow-y-auto sm:gap-3">
             {visibleItems.map((item) => (
               <button
                 key={item.id}
-                className="min-h-[96px] rounded-xl bg-surface px-4 py-4 text-left transition hover:bg-surface-container-high"
+                className="flex min-h-item-card flex-col items-center justify-center rounded-2xl bg-surface px-3 py-4 text-center transition active:scale-[0.98] active:bg-surface-container-high"
                 type="button"
-                onClick={() => handleItemClick(item)}
+                onClick={() => handleMenuItemTap(item)}
               >
-                <p className="text-sm text-outline">#{item.number}</p>
-                <p className="mt-1 text-lg font-semibold">{item.name}</p>
-                <p className="mt-1 text-sm text-outline">
+                <p className="text-pos-item leading-snug">{item.name}</p>
+                <p className="mt-2 text-pos-price text-accent">
                   {formatAud(getDisplayPrice(item))}
                 </p>
               </button>
@@ -264,121 +285,30 @@ export default function RegisterPage(): React.ReactElement {
           </div>
         </div>
 
-        <aside className="flex flex-col rounded-2xl bg-surface-container p-4">
-          <h2 className="text-xl font-semibold">Current order</h2>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {(["PICKUP", "DINE_IN", "COUNTER"] as const).map((type) => (
-              <button
-                key={type}
-                className={cn(
-                  "rounded-lg px-3 py-2 text-sm font-medium",
-                  fulfillmentType === type
-                    ? "bg-accent text-white"
-                    : "bg-surface",
-                )}
-                type="button"
-                onClick={() => setFulfillmentType(type)}
-              >
-                {type.replace("_", " ")}
-              </button>
-            ))}
-          </div>
-
-          {lastTicket ? (
-            <p className="mt-3 rounded-lg bg-surface px-3 py-2 text-sm text-green-200">
-              Last ticket #{lastTicket} paid
-            </p>
-          ) : null}
-
-          <div className="mt-4 flex-1 space-y-2 overflow-y-auto rounded-xl bg-surface p-4">
-            {cart.length === 0 ? (
-              <p className="text-sm text-outline">
-                Tap menu items to add them here.
-              </p>
-            ) : (
-              cart.map((line) => (
-                <div
-                  key={line.key}
-                  className="flex items-center justify-between gap-2 border-b border-white/5 pb-2"
-                >
-                  <div>
-                    <p className="font-medium">{line.name}</p>
-                    <p className="text-sm text-outline">
-                      {formatAud(line.unitPrice)} each
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="min-h-touch min-w-touch rounded-lg bg-surface-container-high"
-                      type="button"
-                      onClick={() => updateQuantity(line.key, -1)}
-                    >
-                      <Minus className="mx-auto h-4 w-4" />
-                    </button>
-                    <span className="w-6 text-center">{line.quantity}</span>
-                    <button
-                      className="min-h-touch min-w-touch rounded-lg bg-surface-container-high"
-                      type="button"
-                      onClick={() => updateQuantity(line.key, 1)}
-                    >
-                      <Plus className="mx-auto h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="mt-4 border-t border-white/10 pt-4">
-            <div className="flex items-center justify-between text-lg font-semibold">
-              <span>Total</span>
-              <span>{formatAud(quote?.total ?? 0)}</span>
-            </div>
-
-            {payError ? (
-              <p className="mt-2 text-sm text-red-300">{payError}</p>
-            ) : null}
-
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <button
-                className="min-h-touch inline-flex items-center justify-center gap-2 rounded-xl bg-surface-container-high px-4 py-3 font-semibold disabled:opacity-50"
-                type="button"
-                disabled={paying || cart.length === 0}
-                onClick={() => void submitOrder("cash")}
-              >
-                <HandCoins className="h-5 w-5" />
-                Cash
-              </button>
-              <button
-                className="min-h-touch inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 font-semibold text-white disabled:opacity-50"
-                type="button"
-                disabled={paying || cart.length === 0}
-                onClick={() => void submitOrder("card")}
-              >
-                <CreditCard className="h-5 w-5" />
-                Card
-              </button>
-              <button
-                className="min-h-touch col-span-2 inline-flex items-center justify-center gap-2 rounded-xl border border-red-400/40 px-4 py-3 font-medium text-red-200"
-                type="button"
-                disabled={cart.length === 0}
-                onClick={clearCart}
-              >
-                <Trash2 className="h-5 w-5" />
-                Clear
-              </button>
-            </div>
-          </div>
-        </aside>
+        <CurrentOrderSidebar
+          cart={cart}
+          fulfillmentType={fulfillmentType}
+          lastTicket={lastTicket}
+          payError={payError}
+          paying={paying}
+          quote={quote}
+          onClear={clearCart}
+          onDecrement={decrementLine}
+          onFulfillmentChange={setFulfillmentType}
+          onIncrement={incrementLine}
+          onPayCash={() => void submitOrder("cash")}
+          onPayStripe={() => void submitOrder("card")}
+          onRemove={removeLine}
+        />
       </section>
 
-      {sizePickerItem ? (
-        <SizePickerDialog
-          item={sizePickerItem}
-          open={Boolean(sizePickerItem)}
-          onClose={() => setSizePickerItem(null)}
-          onSelect={(size) => addToCart(sizePickerItem, size)}
+      {modifierState ? (
+        <ItemModifierModal
+          category={modifierState.category}
+          item={modifierState.item}
+          open={Boolean(modifierState)}
+          onAdd={(options) => addToCart(modifierState.item, options)}
+          onClose={() => setModifierState(null)}
         />
       ) : null}
     </>

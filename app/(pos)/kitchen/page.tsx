@@ -70,19 +70,22 @@ export default function KitchenPage(): React.ReactElement {
   }
 
   return (
-    <section>
-      <h2 className="text-2xl font-semibold">Kitchen display</h2>
-      <p className="mt-1 text-sm text-outline">
+    <section className="flex h-full min-h-0 flex-1 flex-col">
+      <h2 className="text-lg font-bold">Kitchen display</h2>
+      <p className="mt-0.5 text-sm font-medium text-outline">
         Paid POS orders only. Updates every 5 seconds.
       </p>
 
-      {error ? <p className="mt-4 text-sm text-red-300">{error}</p> : null}
+      {error ? <p className="mt-3 text-sm font-medium text-red-300">{error}</p> : null}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-3 grid min-h-0 flex-1 gap-2 md:grid-cols-3 md:gap-3">
         {COLUMNS.map((column) => (
-          <div key={column} className="rounded-2xl bg-surface-container p-4">
-            <h3 className="text-lg font-semibold">{column}</h3>
-            <div className="mt-4 space-y-3">
+          <div
+            key={column}
+            className="flex min-h-0 flex-col rounded-2xl bg-surface-container p-3"
+          >
+            <h3 className="text-base font-bold">{column}</h3>
+            <div className="pos-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
               {orders
                 .filter((order) => order.status === column)
                 .map((order) => (
@@ -90,10 +93,10 @@ export default function KitchenPage(): React.ReactElement {
                     key={order.id}
                     className="rounded-xl bg-surface p-4"
                   >
-                    <p className="text-sm text-outline">
+                    <p className="text-sm font-bold">
                       Ticket #{order.ticketNumber ?? "—"}
                     </p>
-                    <ul className="mt-2 space-y-1 text-sm">
+                    <ul className="mt-2 space-y-1 text-sm font-medium">
                       {order.items.map((item, index) => (
                         <li key={`${order.id}-${index}`}>
                           {item.quantity}× {item.name}
@@ -104,7 +107,7 @@ export default function KitchenPage(): React.ReactElement {
                     {column !== "READY" ? (
                       <button
                         className={cn(
-                          "mt-3 min-h-touch w-full rounded-lg bg-surface-container-high px-3 py-2 text-sm font-medium",
+                          "mt-3 flex min-h-touch-lg w-full items-center justify-center rounded-xl bg-surface-container-high px-3 text-sm font-bold",
                         )}
                         type="button"
                         onClick={() =>

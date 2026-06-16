@@ -1,5 +1,5 @@
 import { RequireAuth } from "@/components/auth/require-auth";
-import { PosHeader } from "@/components/layout/pos-header";
+import { PosShell } from "@/components/layout/pos-shell";
 
 export default function PosLayout({
   children,
@@ -8,8 +8,7 @@ export default function PosLayout({
 }>): React.ReactElement {
   return (
     <RequireAuth>
-      <PosHeader />
-      <main className="mx-auto max-w-7xl p-4">{children}</main>
+      <PosShell>{children}</PosShell>
     </RequireAuth>
   );
 }
