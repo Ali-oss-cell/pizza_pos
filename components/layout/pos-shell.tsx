@@ -45,11 +45,11 @@ export function PosShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-white/10 bg-surface-container px-3">
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-white/10 bg-surface-container px-2 sm:px-3">
         <button
           aria-expanded={menuOpen}
           aria-label="Open menu"
-          className="flex min-h-touch-lg min-w-touch-lg items-center justify-center rounded-xl bg-surface-container-high text-on-surface"
+          className="flex min-h-touch min-w-touch items-center justify-center rounded-lg bg-surface-container-high text-on-surface"
           type="button"
           onClick={() => setMenuOpen(true)}
         >
@@ -135,7 +135,7 @@ export function PosShell({
         ) : null}
       </aside>
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 sm:p-3">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-1.5 sm:p-2">
         {children}
       </main>
     </div>

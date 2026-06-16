@@ -311,14 +311,14 @@ export default function RegisterPage(): React.ReactElement {
 
   return (
     <>
-      <section className="grid h-full min-h-0 flex-1 gap-2 md:grid-cols-[1.55fr_1fr] md:gap-3">
-        <div className="flex min-h-0 flex-col rounded-2xl bg-surface-container p-2 sm:p-3">
-          <div className="pos-scrollbar mb-3 flex gap-2 overflow-x-auto pb-1">
+      <section className="grid h-full min-h-0 flex-1 gap-2 md:grid-cols-[1.65fr_1fr] md:gap-2">
+        <div className="flex min-h-0 flex-col rounded-xl bg-surface-container p-2">
+          <div className="pos-scrollbar mb-2 flex gap-1.5 overflow-x-auto pb-1 sm:gap-2">
             {categories.map((category) => (
               <button
                 key={category.slug}
                 className={cn(
-                  "min-h-category-tab shrink-0 rounded-xl px-6 text-base font-bold",
+                  "min-h-category-tab shrink-0 rounded-lg px-3 py-2 text-sm font-bold sm:px-5",
                   activeCategory === category.slug
                     ? "bg-accent text-white shadow-sm shadow-accent/25"
                     : "bg-surface-container-high text-on-surface",
@@ -331,16 +331,16 @@ export default function RegisterPage(): React.ReactElement {
             ))}
           </div>
 
-          <div className="pos-scrollbar grid flex-1 grid-cols-2 gap-2.5 overflow-y-auto sm:gap-3">
+          <div className="pos-scrollbar grid flex-1 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 sm:gap-2.5">
             {visibleItems.map((item) => (
               <button
                 key={item.id}
-                className="flex min-h-item-card flex-col items-center justify-center rounded-2xl bg-surface px-3 py-4 text-center transition active:scale-[0.98] active:bg-surface-container-high"
+                className="flex min-h-item-card flex-col items-center justify-center rounded-xl bg-surface px-2 py-3 text-center transition active:scale-[0.98] active:bg-surface-container-high"
                 type="button"
                 onClick={() => openModifier(item)}
               >
                 <p className="text-pos-item leading-snug">{item.name}</p>
-                <p className="mt-2 text-pos-price text-accent">
+                <p className="mt-1 text-pos-price text-accent">
                   {formatAud(getDisplayPrice(item))}
                 </p>
               </button>
