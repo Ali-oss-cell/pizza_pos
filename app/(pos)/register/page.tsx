@@ -19,6 +19,12 @@ import {
 import { formatAud } from "@/lib/format";
 import { fetchMenuCategories, fetchMenuItems, getDisplayPrice } from "@/lib/menu";
 import { buildLocalQuote, normalizeQuoteResult } from "@/lib/pricing";
+import {
+  createClientRequestId,
+  listPendingPayments,
+  submitCardPayment,
+  submitCashPayment,
+} from "@/lib/payment-sync";
 import { cn } from "@/lib/utils";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
 import type {
@@ -28,12 +34,6 @@ import type {
   ToppingCategoryGroup,
 } from "@/types/customizations";
 import type { MenuCategory, MenuItem } from "@/types/menu";
-
-interface PosOrder {
-  id: string;
-  ticketNumber: number | null;
-  total: string | number;
-}
 
 interface ModifierState {
   item: MenuItem;
@@ -266,38 +266,43 @@ export default function RegisterPage(): React.ReactElement {
     setPaying(true);
     setPayError(null);
 
-    try {
-      const order = await apiFetch<PosOrder>("/pos/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          items: cart.map((line) => ({
-            menuItemId: line.menuItemId,
-            quantity: line.quantity,
-            size: line.size,
-            crust: line.crust,
-            toppingIds: line.toppingIds.length > 0 ? line.toppingIds : undefined,
-            removedIngredients:
-              line.removedIngredients.length > 0
-                ? line.removedIngredients
-                : undefined,
-          })),
-          fulfillmentType,
-        }),
-      });
+    const clientRequestId = createClientRequestId();
+    const payload = {
+      clientRequestId,
+      items: cart.map((line) => ({
+        menuItemId: line.menuItemId,
+        quantity: line.quantity,
+        size: line.size,
+        crust: line.crust,
+        toppingIds: line.toppingIds.length > 0 ? line.toppingIds : undefined,
+        removedIngredients:
+          line.removedIngredients.length > 0
+            ? line.removedIngredients
+            : undefined,
+      })),
+      fulfillmentType,
+    };
 
-      if (payment === "cash") {
-        await apiFetch("/pos/payments/cash", {
-          method: "POST",
-          body: JSON.stringify({ orderId: order.id }),
-        });
-      } else {
-        await apiFetch("/pos/payments/card", {
-          method: "POST",
-          body: JSON.stringify({ orderId: order.id }),
-        });
-      }
+    try {
+      const order =
+        payment === "cash"
+          ? await submitCashPayment(payload)
+          : await submitCardPayment(payload);
 
       setLastTicket(order.ticketNumber);
+
+      const stillPending = listPendingPayments().some(
+        (entry) => entry.clientRequestId === clientRequestId,
+      );
+
+      if (stillPending) {
+        setPayError(
+          payment === "cash"
+            ? `Ticket #${order.ticketNumber ?? "?"} saved — cash payment will sync when connection is stable.`
+            : `Ticket #${order.ticketNumber ?? "?"} saved — card payment will retry automatically.`,
+        );
+      }
+
       clearCart();
     } catch (error: unknown) {
       setPayError(

@@ -1,5 +1,6 @@
 "use client";
 
+import { PaymentSyncBanner } from "@/components/layout/payment-sync-banner";
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -65,6 +66,8 @@ export function PosShell({
           </p>
         </div>
       </header>
+
+      <PaymentSyncBanner />
 
       {menuOpen ? (
         <button
