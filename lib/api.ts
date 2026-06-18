@@ -37,9 +37,16 @@ export function setAuthSession(token: string, user: PosUser): void {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
+export const AUTH_EXPIRED_EVENT = "pos-auth-expired";
+
 export function clearAuthSession(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+}
+
+export function notifyAuthExpired(): void {
+  clearAuthSession();
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
 }
 
 export class ApiError extends Error {
@@ -88,6 +95,10 @@ export async function apiFetch<T>(
       if (text) {
         message = text;
       }
+    }
+
+    if (response.status === 401 && typeof window !== "undefined") {
+      notifyAuthExpired();
     }
 
     throw new ApiError(message, response.status);

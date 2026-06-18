@@ -11,6 +11,8 @@ import {
 import { useRouter } from "next/navigation";
 import {
   ApiError,
+  AUTH_EXPIRED_EVENT,
+  apiFetch,
   clearAuthSession,
   getAuthToken,
   getStoredUser,
@@ -38,17 +40,41 @@ export function AuthProvider({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const token = getAuthToken();
-    const storedUser = getStoredUser();
+    async function restoreSession(): Promise<void> {
+      const token = getAuthToken();
+      const storedUser = getStoredUser();
 
-    if (token && storedUser && canAccessPos(storedUser.role)) {
-      setUser(storedUser);
-    } else if (token || storedUser) {
-      clearAuthSession();
+      if (!token || !storedUser || !canAccessPos(storedUser.role)) {
+        if (token || storedUser) {
+          clearAuthSession();
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        await apiFetch("/auth/me");
+        setUser(storedUser);
+      } catch {
+        clearAuthSession();
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
     }
 
-    setIsLoading(false);
+    void restoreSession();
   }, []);
+
+  useEffect(() => {
+    const onAuthExpired = (): void => {
+      setUser(null);
+      router.replace("/login");
+    };
+
+    window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
+  }, [router]);
 
   const logout = useCallback(() => {
     clearAuthSession();
