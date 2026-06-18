@@ -18,6 +18,7 @@ import {
 } from "@/lib/customizations";
 import { formatAud } from "@/lib/format";
 import { fetchMenuCategories, fetchMenuItems, getDisplayPrice } from "@/lib/menu";
+import { buildLocalQuote, normalizeQuoteResult } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
 import type {
@@ -118,24 +119,36 @@ export default function RegisterPage(): React.ReactElement {
       return;
     }
 
-    const result = await apiFetch<QuoteResult>("/pos/orders/quote", {
-      method: "POST",
-      body: JSON.stringify({
-        items: lines.map((line) => ({
-          menuItemId: line.menuItemId,
-          quantity: line.quantity,
-          size: line.size,
-          crust: line.crust,
-          toppingIds: line.toppingIds.length > 0 ? line.toppingIds : undefined,
-          removedIngredients:
-            line.removedIngredients.length > 0
-              ? line.removedIngredients
-              : undefined,
-        })),
-      }),
-    });
+    setQuote(buildLocalQuote(lines));
 
-    setQuote(result);
+    try {
+      const result = await apiFetch<QuoteResult>("/pos/orders/quote", {
+        method: "POST",
+        body: JSON.stringify({
+          items: lines.map((line) => ({
+            menuItemId: line.menuItemId,
+            quantity: line.quantity,
+            size: line.size,
+            crust: line.crust,
+            toppingIds: line.toppingIds.length > 0 ? line.toppingIds : undefined,
+            removedIngredients:
+              line.removedIngredients.length > 0
+                ? line.removedIngredients
+                : undefined,
+          })),
+        }),
+      });
+
+      setQuote(normalizeQuoteResult(result));
+      setPayError(null);
+    } catch (error: unknown) {
+      setQuote(buildLocalQuote(lines));
+      setPayError(
+        error instanceof Error
+          ? `${error.message} (showing local total)`
+          : "Server quote unavailable (showing local total)",
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -144,12 +157,10 @@ export default function RegisterPage(): React.ReactElement {
       return;
     }
 
+    setQuote(buildLocalQuote(cart));
+
     const timer = window.setTimeout(() => {
-      void refreshQuote(cart).catch((error: unknown) => {
-        setPayError(
-          error instanceof Error ? error.message : "Could not price order",
-        );
-      });
+      void refreshQuote(cart);
     }, 250);
 
     return () => window.clearTimeout(timer);

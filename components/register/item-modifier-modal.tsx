@@ -11,6 +11,7 @@ import {
 } from "@/lib/cart-lines";
 import { formatAud } from "@/lib/format";
 import { getDisplayPrice } from "@/lib/menu";
+import { calculateUnitPrice, normalizeQuoteResult, toMoney } from "@/lib/pricing";
 import { cn } from "@/lib/utils";
 import type { QuoteResult } from "@/types/cart";
 import type { CrustOption, ToppingCategory } from "@/types/customizations";
@@ -61,7 +62,30 @@ export function ItemModifierModal({
   const [quantity, setQuantity] = useState(1);
   const [unitPrice, setUnitPrice] = useState(() => getDisplayPrice(item));
   const [quoting, setQuoting] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
   const quoteRequestRef = useRef(0);
+
+  const clientUnitPrice = useMemo(
+    () =>
+      calculateUnitPrice({
+        item,
+        size: showSizes ? size : undefined,
+        crustOptions,
+        crustId: showCrust && crustId ? crustId : undefined,
+        toppingCategories,
+        toppingIds,
+      }),
+    [
+      item,
+      size,
+      crustId,
+      toppingIds,
+      showSizes,
+      showCrust,
+      crustOptions,
+      toppingCategories,
+    ],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -74,7 +98,16 @@ export function ItemModifierModal({
     setRemovedIngredients([]);
     setQuantity(1);
     setUnitPrice(getDisplayPrice(item, defaultSize));
+    setQuoteError(null);
   }, [open, item.id, defaultSize, crustOptions, item]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setUnitPrice(clientUnitPrice);
+  }, [open, clientUnitPrice]);
 
   useEffect(() => {
     if (!open) {
@@ -84,6 +117,7 @@ export function ItemModifierModal({
     const requestId = quoteRequestRef.current + 1;
     quoteRequestRef.current = requestId;
     setQuoting(true);
+    setQuoteError(null);
 
     void apiFetch<QuoteResult>("/pos/orders/quote", {
       method: "POST",
@@ -105,13 +139,20 @@ export function ItemModifierModal({
         if (quoteRequestRef.current !== requestId) {
           return;
         }
-        setUnitPrice(quote.lines[0]?.unitPrice ?? getDisplayPrice(item, size));
+        const normalized = normalizeQuoteResult(quote);
+        const apiUnitPrice = toMoney(normalized.lines[0]?.unitPrice);
+        setUnitPrice(apiUnitPrice > 0 ? apiUnitPrice : clientUnitPrice);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (quoteRequestRef.current !== requestId) {
           return;
         }
-        setUnitPrice(getDisplayPrice(item, size));
+        setUnitPrice(clientUnitPrice);
+        setQuoteError(
+          error instanceof Error
+            ? error.message
+            : "Server quote unavailable — using local price.",
+        );
       })
       .finally(() => {
         if (quoteRequestRef.current === requestId) {
@@ -128,6 +169,7 @@ export function ItemModifierModal({
     showSizes,
     showCrust,
     item,
+    clientUnitPrice,
   ]);
 
   if (!open) {
@@ -375,7 +417,9 @@ export function ItemModifierModal({
               Add to order · {formatAud(unitPrice * quantity)}
             </span>
             {quoting ? (
-              <span className="text-xs text-white/80">Updating price…</span>
+              <span className="text-xs text-white/80">Checking price…</span>
+            ) : quoteError ? (
+              <span className="text-xs text-white/80">{quoteError}</span>
             ) : (
               <span className="text-xs text-white/80">
                 {formatAud(unitPrice)} each
