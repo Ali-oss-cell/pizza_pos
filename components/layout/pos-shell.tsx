@@ -58,7 +58,7 @@ export function PosShell({
         </button>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold tracking-tight">
+          <p className="truncate font-display text-sm font-bold tracking-tight">
             Marina Pizzas
           </p>
           <p className="truncate text-xs font-medium text-outline">

@@ -18,14 +18,8 @@ const config: Config = {
         outline: "#ab888e",
       },
       fontFamily: {
-        sans: [
-          "var(--font-pos)",
-          "system-ui",
-          "-apple-system",
-          "Segoe UI",
-          "Roboto",
-          "sans-serif",
-        ],
+        sans: ["var(--font-body)", "Montserrat", "system-ui", "sans-serif"],
+        display: ["TG Praktikal", "system-ui", "sans-serif"],
       },
       minHeight: {
         touch: "40px",
