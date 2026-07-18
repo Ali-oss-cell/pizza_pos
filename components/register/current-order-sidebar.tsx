@@ -34,6 +34,8 @@ interface CurrentOrderSidebarProps {
   lastTicket: number | null;
   payError: string | null;
   paying: boolean;
+  cashEnabled: boolean;
+  cardTerminalEnabled: boolean;
   onFulfillmentChange: (type: FulfillmentType) => void;
   onIncrement: (key: string) => void;
   onDecrement: (key: string) => void;
@@ -50,6 +52,8 @@ export function CurrentOrderSidebar({
   lastTicket,
   payError,
   paying,
+  cashEnabled,
+  cardTerminalEnabled,
   onFulfillmentChange,
   onIncrement,
   onDecrement,
@@ -60,6 +64,8 @@ export function CurrentOrderSidebar({
 }: CurrentOrderSidebarProps): React.ReactElement {
   const total = quote?.total ?? 0;
   const canPay = cart.length > 0 && quote !== null && !paying;
+  const canPayCard = canPay && cardTerminalEnabled;
+  const canPayCash = canPay && cashEnabled;
 
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl bg-surface-container">
@@ -179,29 +185,41 @@ export function CurrentOrderSidebar({
           </span>
         </p>
 
-        <button
-          className="flex min-h-[2.75rem] w-full flex-col items-center justify-center rounded-xl bg-[#635BFF] px-3 text-white shadow-lg shadow-[#635BFF]/30 transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={!canPay}
-          type="button"
-          onClick={onPayStripe}
-        >
-          <span className="text-sm font-bold tracking-tight">
-            Pay with Stripe / Tap
-          </span>
-          <span className="text-xs font-semibold text-white/80">
-            {formatAud(total)}
-          </span>
-        </button>
+        {cardTerminalEnabled ? (
+          <button
+            className="flex min-h-[2.75rem] w-full flex-col items-center justify-center rounded-xl bg-[#635BFF] px-3 text-white shadow-lg shadow-[#635BFF]/30 transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!canPayCard}
+            type="button"
+            onClick={onPayStripe}
+          >
+            <span className="text-sm font-bold tracking-tight">
+              Pay with Stripe / Tap
+            </span>
+            <span className="text-xs font-semibold text-white/80">
+              {formatAud(total)}
+            </span>
+          </button>
+        ) : (
+          <p className="mb-1.5 rounded-lg bg-surface px-3 py-2 text-center text-xs text-outline">
+            Card terminal disabled for this store
+          </p>
+        )}
 
-        <button
-          className="mt-1.5 flex min-h-touch w-full items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-surface px-3 text-xs font-bold text-on-surface disabled:opacity-50"
-          disabled={!canPay}
-          type="button"
-          onClick={onPayCash}
-        >
-          <HandCoins className="h-3.5 w-3.5" />
-          Cash payment
-        </button>
+        {cashEnabled ? (
+          <button
+            className="mt-1.5 flex min-h-touch w-full items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-surface px-3 text-xs font-bold text-on-surface disabled:opacity-50"
+            disabled={!canPayCash}
+            type="button"
+            onClick={onPayCash}
+          >
+            <HandCoins className="h-3.5 w-3.5" />
+            Cash payment
+          </button>
+        ) : (
+          <p className="mt-1.5 rounded-lg bg-surface px-3 py-2 text-center text-xs text-outline">
+            Cash disabled for this store
+          </p>
+        )}
       </div>
     </aside>
   );

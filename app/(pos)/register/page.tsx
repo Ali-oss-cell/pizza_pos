@@ -62,6 +62,8 @@ export default function RegisterPage(): React.ReactElement {
   const [payError, setPayError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
   const [lastTicket, setLastTicket] = useState<number | null>(null);
+  const [cashEnabled, setCashEnabled] = useState(true);
+  const [cardTerminalEnabled, setCardTerminalEnabled] = useState(false);
 
   useEffect(() => {
     void Promise.all([
@@ -69,8 +71,12 @@ export default function RegisterPage(): React.ReactElement {
       fetchMenuItems(),
       fetchToppingGroups(),
       fetchCrustOptions(),
+      apiFetch<{
+        cashEnabled: boolean;
+        cardTerminalEnabled: boolean;
+      }>("/pos/payment-methods"),
     ])
-      .then(([nextCategories, nextItems, nextToppings, nextCrusts]) => {
+      .then(([nextCategories, nextItems, nextToppings, nextCrusts, methods]) => {
         const activeCategories = nextCategories
           .filter((category) => category.isActive)
           .sort(
@@ -90,6 +96,8 @@ export default function RegisterPage(): React.ReactElement {
         setToppingGroups(nextToppings);
         setApiCrusts(nextCrusts);
         setActiveCategory(activeCategories[0]?.slug ?? "");
+        setCashEnabled(methods.cashEnabled);
+        setCardTerminalEnabled(methods.cardTerminalEnabled);
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -366,6 +374,8 @@ export default function RegisterPage(): React.ReactElement {
 
         <CurrentOrderSidebar
           cart={cart}
+          cardTerminalEnabled={cardTerminalEnabled}
+          cashEnabled={cashEnabled}
           fulfillmentType={fulfillmentType}
           lastTicket={lastTicket}
           payError={payError}
