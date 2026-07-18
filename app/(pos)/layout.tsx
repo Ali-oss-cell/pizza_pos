@@ -1,4 +1,5 @@
 import { RequireAuth } from "@/components/auth/require-auth";
+import { RequireStore } from "@/components/auth/require-store";
 import { PosShell } from "@/components/layout/pos-shell";
 
 export default function PosLayout({
@@ -8,7 +9,9 @@ export default function PosLayout({
 }>): React.ReactElement {
   return (
     <RequireAuth>
-      <PosShell>{children}</PosShell>
+      <RequireStore>
+        <PosShell>{children}</PosShell>
+      </RequireStore>
     </RequireAuth>
   );
 }

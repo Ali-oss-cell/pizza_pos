@@ -19,7 +19,7 @@ import {
   setAuthSession,
 } from "@/lib/api";
 import type { AuthResponse, PosUser } from "@/types/auth";
-import { canAccessPos } from "@/types/auth";
+import { canAccessPos, normalizePosUser } from "@/types/auth";
 
 interface AuthContextValue {
   user: PosUser | null;
@@ -53,8 +53,10 @@ export function AuthProvider({
       }
 
       try {
-        await apiFetch("/auth/me");
-        setUser(storedUser);
+        const profile = await apiFetch<PosUser>("/auth/me");
+        const nextUser = normalizePosUser(profile);
+        setAuthSession(token, nextUser);
+        setUser(nextUser);
       } catch {
         clearAuthSession();
         setUser(null);
@@ -108,16 +110,17 @@ export function AuthProvider({
     }
 
     const data = (await response.json()) as AuthResponse;
+    const nextUser = normalizePosUser(data.user);
 
-    if (!canAccessPos(data.user.role)) {
+    if (!canAccessPos(nextUser.role)) {
       throw new ApiError(
         "This account cannot access POS. Use a Staff, Manager, or Admin login.",
         403,
       );
     }
 
-    setAuthSession(data.accessToken, data.user);
-    setUser(data.user);
+    setAuthSession(data.accessToken, nextUser);
+    setUser(nextUser);
   }, []);
 
   const value = useMemo(

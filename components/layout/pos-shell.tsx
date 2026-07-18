@@ -3,9 +3,10 @@
 import { PaymentSyncBanner } from "@/components/layout/payment-sync-banner";
 import { Menu, X } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useStore } from "@/lib/store-context";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -24,7 +25,10 @@ export function PosShell({
   children: React.ReactNode;
 }): React.ReactElement {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, logout } = useAuth();
+  const { selectedStore, selectedLocation, clearSelection, stores } =
+    useStore();
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -44,8 +48,18 @@ export function PosShell({
     };
   }, [menuOpen]);
 
+  const brandName = selectedStore?.name ?? "POS";
+  const accent = selectedStore?.primaryColor?.trim() || undefined;
+
   return (
-    <div className="flex min-h-screen flex-col">
+    <div
+      className="flex min-h-screen flex-col"
+      style={
+        accent
+          ? ({ ["--color-accent" as string]: accent } as React.CSSProperties)
+          : undefined
+      }
+    >
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-white/10 bg-surface-container px-2 sm:px-3">
         <button
           aria-expanded={menuOpen}
@@ -59,10 +73,12 @@ export function PosShell({
 
         <div className="min-w-0 flex-1">
           <p className="truncate font-display text-sm font-bold tracking-tight">
-            Marina Pizzas
+            {brandName}
           </p>
           <p className="truncate text-xs font-medium text-outline">
-            {pageLabel(pathname)}
+            {selectedLocation?.name
+              ? `${pageLabel(pathname)} · ${selectedLocation.name}`
+              : pageLabel(pathname)}
           </p>
         </div>
       </header>
@@ -123,9 +139,24 @@ export function PosShell({
             <p className="px-1 text-sm font-semibold text-on-surface">
               {user.firstName} {user.lastName}
             </p>
-            <p className="px-1 text-xs text-outline">{user.role}</p>
+            <p className="px-1 text-xs text-outline">
+              {selectedStore?.name ?? user.role}
+            </p>
+            {stores.length > 1 ? (
+              <button
+                className="mt-3 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-outline transition hover:bg-surface-container-high hover:text-on-surface"
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  clearSelection();
+                  router.push("/select-store");
+                }}
+              >
+                Switch store
+              </button>
+            ) : null}
             <button
-              className="mt-4 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-outline transition hover:bg-surface-container-high hover:text-on-surface"
+              className="mt-2 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-outline transition hover:bg-surface-container-high hover:text-on-surface"
               type="button"
               onClick={() => {
                 setMenuOpen(false);

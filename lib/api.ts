@@ -1,4 +1,10 @@
 import type { PosUser } from "@/types/auth";
+import {
+  BRAND_SLUG_HEADER,
+  LOCATION_ID_HEADER,
+  clearStoreSelection,
+  getStoreSelection,
+} from "@/lib/store-session";
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
@@ -42,6 +48,7 @@ export const AUTH_EXPIRED_EVENT = "pos-auth-expired";
 export function clearAuthSession(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  clearStoreSelection();
 }
 
 export function notifyAuthExpired(): void {
@@ -65,6 +72,7 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const token = getAuthToken();
   const headers = new Headers(options.headers);
+  const selection = getStoreSelection();
 
   if (!(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
@@ -74,7 +82,19 @@ export async function apiFetch<T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
+  let requestPath = path;
+
+  if (selection) {
+    headers.set(BRAND_SLUG_HEADER, selection.storeSlug);
+    headers.set(LOCATION_ID_HEADER, selection.locationId);
+
+    if (!requestPath.includes("brand=")) {
+      const separator = requestPath.includes("?") ? "&" : "?";
+      requestPath = `${requestPath}${separator}brand=${encodeURIComponent(selection.storeSlug)}`;
+    }
+  }
+
+  const response = await fetch(`${API_URL}${requestPath}`, {
     ...options,
     headers,
   });

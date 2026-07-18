@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/lib/auth-context";
+import { StoreProvider } from "@/lib/store-context";
 import { montserrat } from "@/lib/fonts";
 import "./globals.css";
 
@@ -23,7 +24,9 @@ export default function RootLayout({
   return (
     <html lang="en-AU" className={montserrat.variable} suppressHydrationWarning>
       <body className="font-sans" suppressHydrationWarning>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <StoreProvider>{children}</StoreProvider>
+        </AuthProvider>
       </body>
     </html>
   );

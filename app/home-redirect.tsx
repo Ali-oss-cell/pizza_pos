@@ -16,7 +16,9 @@ export default function HomeRedirect(): React.ReactElement | null {
 
     if (user) {
       const from = searchParams.get("from");
-      router.replace(from && from.startsWith("/") ? from : "/register");
+      router.replace(
+        from && from.startsWith("/") ? from : "/select-store",
+      );
       return;
     }
 

@@ -17,7 +17,9 @@ export default function LoginForm(): React.ReactElement {
   useEffect(() => {
     if (!isLoading && user) {
       const from = searchParams.get("from");
-      router.replace(from && from.startsWith("/") ? from : "/register");
+      router.replace(
+        from && from.startsWith("/") ? from : "/select-store",
+      );
     }
   }, [isLoading, user, router, searchParams]);
 
@@ -29,7 +31,9 @@ export default function LoginForm(): React.ReactElement {
     try {
       await login(email, password);
       const from = searchParams.get("from");
-      router.push(from && from.startsWith("/") ? from : "/register");
+      router.push(
+        from && from.startsWith("/") ? from : "/select-store",
+      );
     } catch (submitError) {
       setError(
         submitError instanceof Error ? submitError.message : "Login failed",
