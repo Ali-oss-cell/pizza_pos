@@ -83,6 +83,14 @@ export async function apiFetch<T>(
   }
 
   let requestPath = path;
+  const needsStoreScope = isStoreScopedPath(requestPath);
+
+  if (needsStoreScope && !selection) {
+    throw new ApiError(
+      "Select a store and location before using POS.",
+      400,
+    );
+  }
 
   if (selection) {
     headers.set(BRAND_SLUG_HEADER, selection.storeSlug);
@@ -129,4 +137,13 @@ export async function apiFetch<T>(
   }
 
   return response.json() as Promise<T>;
+}
+
+function isStoreScopedPath(path: string): boolean {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return (
+    normalized.startsWith("/pos/") ||
+    normalized.startsWith("/menu") ||
+    normalized.startsWith("/customizations")
+  );
 }

@@ -72,10 +72,10 @@ export function PosShell({
         </button>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate font-display text-sm font-bold tracking-tight">
+          <p className="truncate font-display text-base font-bold tracking-tight sm:text-lg">
             {brandName}
           </p>
-          <p className="truncate text-xs font-medium text-outline">
+          <p className="truncate text-xs font-semibold text-outline sm:text-sm">
             {selectedLocation?.name
               ? `${pageLabel(pathname)} · ${selectedLocation.name}`
               : pageLabel(pathname)}
@@ -147,6 +147,13 @@ export function PosShell({
                 className="mt-3 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-outline transition hover:bg-surface-container-high hover:text-on-surface"
                 type="button"
                 onClick={() => {
+                  const currentName = selectedStore?.name ?? "this store";
+                  const confirmed = window.confirm(
+                    `Switch away from ${currentName}? You will pick another store before taking orders.`,
+                  );
+                  if (!confirmed) {
+                    return;
+                  }
                   setMenuOpen(false);
                   clearSelection();
                   router.push("/select-store");
