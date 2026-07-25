@@ -187,13 +187,13 @@ export function CurrentOrderSidebar({
 
         {cardTerminalEnabled ? (
           <button
-            className="flex min-h-[2.75rem] w-full flex-col items-center justify-center rounded-xl bg-[#635BFF] px-3 text-white shadow-lg shadow-[#635BFF]/30 transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[2.75rem] w-full flex-col items-center justify-center rounded-xl bg-accent px-3 text-white shadow-lg shadow-accent/30 transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!canPayCard}
             type="button"
             onClick={onPayStripe}
           >
             <span className="text-sm font-bold tracking-tight">
-              Pay with Stripe / Tap
+              Pay with card / EFTPOS
             </span>
             <span className="text-xs font-semibold text-white/80">
               {formatAud(total)}

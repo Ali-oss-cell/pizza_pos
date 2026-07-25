@@ -95,8 +95,8 @@ async function markCashPaid(orderId: string): Promise<void> {
   });
 }
 
-async function startCardPayment(orderId: string): Promise<void> {
-  await apiFetch("/pos/payments/card", {
+async function startCardPayment(orderId: string): Promise<PosOrderResult> {
+  return apiFetch<PosOrderResult>("/pos/payments/card", {
     method: "POST",
     body: JSON.stringify({ orderId }),
   });
@@ -135,7 +135,7 @@ export async function submitCashPayment(
       }
 
       removePending(payload.clientRequestId);
-      return order;
+      return { ...order, paymentStatus: "PAID" };
     } catch (error: unknown) {
       lastError =
         error instanceof Error ? error.message : "Payment sync failed";
@@ -166,35 +166,26 @@ export async function submitCardPayment(
   let order: PosOrderResult | null = null;
   let lastError = "Card payment failed";
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-    if (attempt > 0) {
-      await sleep(RETRY_MS[attempt] ?? 8000);
-    }
+  // Card via Linkly is synchronous — do not auto-retry declines on the pinpad.
+  try {
+    order = await createPosOrder(payload);
+    pending.orderId = order.id;
+    pending.ticketNumber = order.ticketNumber;
+    upsertPending(pending);
 
-    try {
-      if (!order) {
-        order = await createPosOrder(payload);
-        pending.orderId = order.id;
-        pending.ticketNumber = order.ticketNumber;
-        upsertPending(pending);
-      }
-
-      await startCardPayment(order.id);
-      removePending(payload.clientRequestId);
-      return order;
-    } catch (error: unknown) {
-      lastError =
-        error instanceof Error ? error.message : "Card payment failed";
-      pending.lastError = lastError;
-      upsertPending(pending);
-    }
+    const paid = await startCardPayment(order.id);
+    removePending(payload.clientRequestId);
+    return {
+      ...order,
+      paymentStatus: paid.paymentStatus ?? "PAID",
+      ticketNumber: paid.ticketNumber ?? order.ticketNumber,
+    };
+  } catch (error: unknown) {
+    lastError = error instanceof Error ? error.message : "Card payment failed";
+    pending.lastError = lastError;
+    upsertPending(pending);
+    throw new Error(lastError);
   }
-
-  if (order) {
-    return order;
-  }
-
-  throw new Error(lastError);
 }
 
 export async function flushPendingPayments(): Promise<{
