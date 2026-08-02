@@ -60,6 +60,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly body?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -110,14 +111,20 @@ export async function apiFetch<T>(
   if (!response.ok) {
     const text = await response.text();
     let message = `Request failed (${response.status})`;
+    let body: unknown;
 
     try {
-      const body = JSON.parse(text) as { message?: string | string[] };
+      body = JSON.parse(text) as {
+        message?: string | string[];
+        code?: string;
+        shortages?: unknown;
+      };
+      const parsed = body as { message?: string | string[] };
 
-      if (typeof body.message === "string") {
-        message = body.message;
-      } else if (Array.isArray(body.message)) {
-        message = body.message.join(", ");
+      if (typeof parsed.message === "string") {
+        message = parsed.message;
+      } else if (Array.isArray(parsed.message)) {
+        message = parsed.message.join(", ");
       }
     } catch {
       if (text) {
@@ -129,7 +136,7 @@ export async function apiFetch<T>(
       notifyAuthExpired();
     }
 
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, body);
   }
 
   if (response.status === 204) {

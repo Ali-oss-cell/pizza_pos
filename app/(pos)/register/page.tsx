@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CurrentOrderSidebar } from "@/components/register/current-order-sidebar";
 import { ItemModifierModal } from "@/components/register/item-modifier-modal";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import {
   buildCartLineKey,
   buildLineDetail,
@@ -21,9 +22,12 @@ import { fetchMenuCategories, fetchMenuItems, getDisplayPrice } from "@/lib/menu
 import { buildLocalQuote, normalizeQuoteResult } from "@/lib/pricing";
 import {
   createClientRequestId,
+  InventoryShortageError,
   listPendingPayments,
   submitCardPayment,
   submitCashPayment,
+  type InventoryShortage,
+  type PosOrderPayload,
 } from "@/lib/payment-sync";
 import { cn } from "@/lib/utils";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
@@ -42,7 +46,18 @@ interface ModifierState {
   toppingCategories: ToppingCategory[];
 }
 
+interface ShortageDialogState {
+  payment: "cash" | "card";
+  payload: PosOrderPayload;
+  shortages: InventoryShortage[];
+  message: string;
+}
+
 export default function RegisterPage(): React.ReactElement {
+  const { user } = useAuth();
+  const canOverrideInventory =
+    user?.role === "MANAGER" || user?.role === "ADMIN";
+
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [toppingGroups, setToppingGroups] = useState<ToppingCategoryGroup[]>(
@@ -64,6 +79,10 @@ export default function RegisterPage(): React.ReactElement {
   const [lastTicket, setLastTicket] = useState<number | null>(null);
   const [cashEnabled, setCashEnabled] = useState(true);
   const [cardTerminalEnabled, setCardTerminalEnabled] = useState(false);
+  const [shortageDialog, setShortageDialog] =
+    useState<ShortageDialogState | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideError, setOverrideError] = useState<string | null>(null);
 
   useEffect(() => {
     void Promise.all([
@@ -266,17 +285,65 @@ export default function RegisterPage(): React.ReactElement {
     setPayError(null);
   }
 
+  async function runPayment(
+    payment: "cash" | "card",
+    payload: PosOrderPayload,
+    inventoryOverrideReason?: string,
+  ) {
+    setPaying(true);
+    setPayError(null);
+    setOverrideError(null);
+
+    try {
+      const order =
+        payment === "cash"
+          ? await submitCashPayment(payload, { inventoryOverrideReason })
+          : await submitCardPayment(payload, { inventoryOverrideReason });
+
+      setLastTicket(order.ticketNumber);
+      setShortageDialog(null);
+      setOverrideReason("");
+
+      const stillPending = listPendingPayments().some(
+        (entry) => entry.clientRequestId === payload.clientRequestId,
+      );
+
+      if (stillPending) {
+        setPayError(
+          payment === "cash"
+            ? `Ticket #${order.ticketNumber ?? "?"} saved — cash payment will sync when connection is stable.`
+            : `Ticket #${order.ticketNumber ?? "?"} saved — card payment will retry automatically.`,
+        );
+      }
+
+      clearCart();
+    } catch (error: unknown) {
+      if (error instanceof InventoryShortageError) {
+        setShortageDialog({
+          payment,
+          payload,
+          shortages: error.shortages,
+          message: error.message,
+        });
+        setPayError(error.message);
+        return;
+      }
+
+      setPayError(
+        error instanceof Error ? error.message : "Payment failed",
+      );
+    } finally {
+      setPaying(false);
+    }
+  }
+
   async function submitOrder(payment: "cash" | "card") {
     if (cart.length === 0 || !quote) {
       return;
     }
 
-    setPaying(true);
-    setPayError(null);
-
-    const clientRequestId = createClientRequestId();
-    const payload = {
-      clientRequestId,
+    const payload: PosOrderPayload = {
+      clientRequestId: createClientRequestId(),
       items: cart.map((line) => ({
         menuItemId: line.menuItemId,
         quantity: line.quantity,
@@ -291,34 +358,25 @@ export default function RegisterPage(): React.ReactElement {
       fulfillmentType,
     };
 
-    try {
-      const order =
-        payment === "cash"
-          ? await submitCashPayment(payload)
-          : await submitCardPayment(payload);
+    await runPayment(payment, payload);
+  }
 
-      setLastTicket(order.ticketNumber);
-
-      const stillPending = listPendingPayments().some(
-        (entry) => entry.clientRequestId === clientRequestId,
-      );
-
-      if (stillPending) {
-        setPayError(
-          payment === "cash"
-            ? `Ticket #${order.ticketNumber ?? "?"} saved — cash payment will sync when connection is stable.`
-            : `Ticket #${order.ticketNumber ?? "?"} saved — card payment will retry automatically.`,
-        );
-      }
-
-      clearCart();
-    } catch (error: unknown) {
-      setPayError(
-        error instanceof Error ? error.message : "Payment failed",
-      );
-    } finally {
-      setPaying(false);
+  async function confirmInventoryOverride() {
+    if (!shortageDialog) {
+      return;
     }
+
+    const reason = overrideReason.trim();
+    if (!reason) {
+      setOverrideError("Enter a reason to override.");
+      return;
+    }
+
+    await runPayment(
+      shortageDialog.payment,
+      shortageDialog.payload,
+      reason,
+    );
   }
 
   if (loading) {
@@ -401,6 +459,88 @@ export default function RegisterPage(): React.ReactElement {
           onAdd={addToCart}
           onClose={() => setModifierState(null)}
         />
+      ) : null}
+
+      {shortageDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl bg-surface p-4 shadow-xl">
+            <h2 className="text-lg font-bold text-on-surface">
+              Insufficient stock
+            </h2>
+            <p className="mt-1 text-sm text-outline">{shortageDialog.message}</p>
+            <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto text-sm">
+              {shortageDialog.shortages.map((row) => (
+                <li
+                  key={row.stockItemId}
+                  className="rounded-lg bg-surface-container px-3 py-2"
+                >
+                  <span className="font-semibold text-on-surface">
+                    {row.name}
+                  </span>
+                  <span className="mt-0.5 block text-outline">
+                    need {row.required}
+                    {row.unit ? ` ${row.unit}` : ""} · on hand {row.onHand}
+                    {row.unit ? ` ${row.unit}` : ""} · short {row.shortfall}
+                    {row.unit ? ` ${row.unit}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            {canOverrideInventory ? (
+              <div className="mt-4 space-y-2">
+                <label className="block text-sm font-medium text-on-surface">
+                  Manager override reason
+                  <textarea
+                    className="mt-1 w-full rounded-lg border border-outline/30 bg-surface-container px-3 py-2 text-sm text-on-surface"
+                    rows={2}
+                    value={overrideReason}
+                    onChange={(event) => setOverrideReason(event.target.value)}
+                    placeholder="Why continue with low stock?"
+                  />
+                </label>
+                {overrideError ? (
+                  <p className="text-sm text-red-400">{overrideError}</p>
+                ) : null}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="flex-1 rounded-lg bg-surface-container-high px-3 py-2 text-sm font-semibold"
+                    disabled={paying}
+                    onClick={() => {
+                      setShortageDialog(null);
+                      setOverrideReason("");
+                      setOverrideError(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white"
+                    disabled={paying}
+                    onClick={() => void confirmInventoryOverride()}
+                  >
+                    {paying ? "Processing…" : "Override & continue"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <p className="text-sm text-outline">
+                  Ask a manager to override, or restock before paying.
+                </p>
+                <button
+                  type="button"
+                  className="mt-3 w-full rounded-lg bg-surface-container-high px-3 py-2 text-sm font-semibold"
+                  onClick={() => setShortageDialog(null)}
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       ) : null}
     </>
   );

@@ -1,10 +1,50 @@
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import type { FulfillmentType } from "@/types/cart";
 
 const QUEUE_KEY = "pos_pending_payments";
 export const PENDING_PAYMENTS_CHANGED_EVENT = "pos-pending-payments-changed";
 const MAX_ATTEMPTS = 5;
 const RETRY_MS = [0, 1500, 3000, 5000, 8000];
+
+export interface InventoryShortage {
+  stockItemId: string;
+  name: string;
+  unit?: string;
+  required: string;
+  onHand: string;
+  shortfall: string;
+}
+
+export class InventoryShortageError extends Error {
+  readonly code = "INVENTORY_SHORTAGE";
+
+  constructor(
+    message: string,
+    readonly shortages: InventoryShortage[],
+    readonly orderId?: string,
+  ) {
+    super(message);
+    this.name = "InventoryShortageError";
+  }
+}
+
+function throwIfInventoryShortage(error: unknown, orderId?: string): never {
+  if (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.body &&
+    typeof error.body === "object" &&
+    (error.body as { code?: string }).code === "INVENTORY_SHORTAGE"
+  ) {
+    const shortages = Array.isArray(
+      (error.body as { shortages?: InventoryShortage[] }).shortages,
+    )
+      ? ((error.body as { shortages: InventoryShortage[] }).shortages ?? [])
+      : [];
+    throw new InventoryShortageError(error.message, shortages, orderId);
+  }
+  throw error instanceof Error ? error : new Error(String(error));
+}
 
 export interface PosOrderPayload {
   clientRequestId: string;
@@ -88,22 +128,47 @@ async function createPosOrder(payload: PosOrderPayload): Promise<PosOrderResult>
   });
 }
 
-async function markCashPaid(orderId: string): Promise<void> {
-  await apiFetch("/pos/payments/cash", {
-    method: "POST",
-    body: JSON.stringify({ orderId }),
-  });
+async function markCashPaid(
+  orderId: string,
+  inventoryOverrideReason?: string,
+): Promise<void> {
+  try {
+    await apiFetch("/pos/payments/cash", {
+      method: "POST",
+      body: JSON.stringify({
+        orderId,
+        ...(inventoryOverrideReason
+          ? { inventoryOverrideReason }
+          : {}),
+      }),
+    });
+  } catch (error: unknown) {
+    throwIfInventoryShortage(error, orderId);
+  }
 }
 
-async function startCardPayment(orderId: string): Promise<PosOrderResult> {
-  return apiFetch<PosOrderResult>("/pos/payments/card", {
-    method: "POST",
-    body: JSON.stringify({ orderId }),
-  });
+async function startCardPayment(
+  orderId: string,
+  inventoryOverrideReason?: string,
+): Promise<PosOrderResult> {
+  try {
+    return await apiFetch<PosOrderResult>("/pos/payments/card", {
+      method: "POST",
+      body: JSON.stringify({
+        orderId,
+        ...(inventoryOverrideReason
+          ? { inventoryOverrideReason }
+          : {}),
+      }),
+    });
+  } catch (error: unknown) {
+    throwIfInventoryShortage(error, orderId);
+  }
 }
 
 export async function submitCashPayment(
   payload: PosOrderPayload,
+  options?: { inventoryOverrideReason?: string },
 ): Promise<PosOrderResult> {
   const pending: PendingPayment = {
     clientRequestId: payload.clientRequestId,
@@ -131,12 +196,19 @@ export async function submitCashPayment(
       }
 
       if (order.paymentStatus !== "PAID") {
-        await markCashPaid(order.id);
+        await markCashPaid(order.id, options?.inventoryOverrideReason);
       }
 
       removePending(payload.clientRequestId);
       return { ...order, paymentStatus: "PAID" };
     } catch (error: unknown) {
+      if (error instanceof InventoryShortageError) {
+        // Keep pending so the same clientRequestId can retry with override;
+        // flush will surface the error until manager overrides or stock is fixed.
+        pending.lastError = error.message;
+        upsertPending(pending);
+        throw error;
+      }
       lastError =
         error instanceof Error ? error.message : "Payment sync failed";
       pending.lastError = lastError;
@@ -153,6 +225,7 @@ export async function submitCashPayment(
 
 export async function submitCardPayment(
   payload: PosOrderPayload,
+  options?: { inventoryOverrideReason?: string },
 ): Promise<PosOrderResult> {
   const pending: PendingPayment = {
     clientRequestId: payload.clientRequestId,
@@ -164,16 +237,17 @@ export async function submitCardPayment(
   upsertPending(pending);
 
   let order: PosOrderResult | null = null;
-  let lastError = "Card payment failed";
 
-  // Card via Linkly is synchronous — do not auto-retry declines on the pinpad.
   try {
     order = await createPosOrder(payload);
     pending.orderId = order.id;
     pending.ticketNumber = order.ticketNumber;
     upsertPending(pending);
 
-    const paid = await startCardPayment(order.id);
+    const paid = await startCardPayment(
+      order.id,
+      options?.inventoryOverrideReason,
+    );
     removePending(payload.clientRequestId);
     return {
       ...order,
@@ -181,7 +255,13 @@ export async function submitCardPayment(
       ticketNumber: paid.ticketNumber ?? order.ticketNumber,
     };
   } catch (error: unknown) {
-    lastError = error instanceof Error ? error.message : "Card payment failed";
+    if (error instanceof InventoryShortageError) {
+      pending.lastError = error.message;
+      upsertPending(pending);
+      throw error;
+    }
+    const lastError =
+      error instanceof Error ? error.message : "Card payment failed";
     pending.lastError = lastError;
     upsertPending(pending);
     throw new Error(lastError);
@@ -217,6 +297,12 @@ export async function flushPendingPayments(): Promise<{
       removePending(entry.clientRequestId);
       synced += 1;
     } catch (error: unknown) {
+      if (error instanceof InventoryShortageError) {
+        entry.lastError = error.message;
+        upsertPending(entry);
+        failed += 1;
+        continue;
+      }
       entry.lastError =
         error instanceof Error ? error.message : "Sync failed";
       upsertPending(entry);
