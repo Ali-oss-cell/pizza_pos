@@ -1,0 +1,38 @@
+name: Deploy POS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-droplet
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Deploy pizza_pos on Droplet
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          port: ${{ secrets.DROPLET_SSH_PORT || 22 }}
+          script_stop: true
+          command_timeout: 40m
+          script: |
+            set -euo pipefail
+            cd ~/piza/piza-pos
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            cd ~/piza/piza-api
+            export COMPOSE_BAKE=false
+            docker compose -f docker-compose.prod.yml build pos
+            docker compose -f docker-compose.prod.yml up -d pos
+            docker compose -f docker-compose.prod.yml ps pos
+            echo "POS deploy OK"
