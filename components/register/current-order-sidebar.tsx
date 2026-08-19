@@ -36,6 +36,7 @@ interface CurrentOrderSidebarProps {
   paying: boolean;
   cashEnabled: boolean;
   cardTerminalEnabled: boolean;
+  cardProvider?: "LINKLY" | "STRIPE" | "NONE" | "CASH";
   onFulfillmentChange: (type: FulfillmentType) => void;
   onIncrement: (key: string) => void;
   onDecrement: (key: string) => void;
@@ -54,6 +55,7 @@ export function CurrentOrderSidebar({
   paying,
   cashEnabled,
   cardTerminalEnabled,
+  cardProvider,
   onFulfillmentChange,
   onIncrement,
   onDecrement,
@@ -193,7 +195,7 @@ export function CurrentOrderSidebar({
             onClick={onPayStripe}
           >
             <span className="text-sm font-bold tracking-tight">
-              Pay with card / EFTPOS
+              {cardProvider === "STRIPE" ? "Pay with card (Stripe Terminal)" : "Pay with card / EFTPOS"}
             </span>
             <span className="text-xs font-semibold text-white/80">
               {formatAud(total)}

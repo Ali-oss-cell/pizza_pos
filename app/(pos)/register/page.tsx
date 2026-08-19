@@ -76,9 +76,11 @@ export default function RegisterPage(): React.ReactElement {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
+  const [cardPayingStripe, setCardPayingStripe] = useState(false);
   const [lastTicket, setLastTicket] = useState<number | null>(null);
   const [cashEnabled, setCashEnabled] = useState(true);
   const [cardTerminalEnabled, setCardTerminalEnabled] = useState(false);
+  const [cardProvider, setCardProvider] = useState<"LINKLY" | "STRIPE" | "NONE" | "CASH">("NONE");
   const [shortageDialog, setShortageDialog] =
     useState<ShortageDialogState | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
@@ -93,6 +95,7 @@ export default function RegisterPage(): React.ReactElement {
       apiFetch<{
         cashEnabled: boolean;
         cardTerminalEnabled: boolean;
+        provider: "LINKLY" | "STRIPE" | "NONE" | "CASH";
       }>("/pos/payment-methods"),
     ])
       .then(([nextCategories, nextItems, nextToppings, nextCrusts, methods]) => {
@@ -117,6 +120,7 @@ export default function RegisterPage(): React.ReactElement {
         setActiveCategory(activeCategories[0]?.slug ?? "");
         setCashEnabled(methods.cashEnabled);
         setCardTerminalEnabled(methods.cardTerminalEnabled);
+        setCardProvider(methods.provider ?? "NONE");
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -294,6 +298,10 @@ export default function RegisterPage(): React.ReactElement {
     setPayError(null);
     setOverrideError(null);
 
+    if (payment === "card" && cardProvider === "STRIPE") {
+      setCardPayingStripe(true);
+    }
+
     try {
       const order =
         payment === "cash"
@@ -334,6 +342,7 @@ export default function RegisterPage(): React.ReactElement {
       );
     } finally {
       setPaying(false);
+      setCardPayingStripe(false);
     }
   }
 
@@ -433,6 +442,7 @@ export default function RegisterPage(): React.ReactElement {
         <CurrentOrderSidebar
           cart={cart}
           cardTerminalEnabled={cardTerminalEnabled}
+          cardProvider={cardProvider}
           cashEnabled={cashEnabled}
           fulfillmentType={fulfillmentType}
           lastTicket={lastTicket}
@@ -539,6 +549,44 @@ export default function RegisterPage(): React.ReactElement {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── Stripe Terminal "present card" overlay ── */}
+      {cardPayingStripe ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="flex w-[min(92vw,22rem)] flex-col items-center gap-5 rounded-2xl bg-surface-container p-8 text-center shadow-2xl">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-accent/15">
+              <svg
+                className="h-10 w-10 text-accent"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                viewBox="0 0 24 24"
+              >
+                <rect x="2" y="5" width="20" height="14" rx="2" />
+                <path d="M2 10h20" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-on-surface">
+                Present card to reader
+              </p>
+              <p className="mt-1 text-sm text-outline">
+                Tap, insert, or swipe on the Stripe Terminal reader.
+              </p>
+            </div>
+            <div className="flex gap-1.5">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-accent" />
+            </div>
+            <p className="text-xs text-outline">
+              Do not close this screen — payment is processing.
+            </p>
           </div>
         </div>
       ) : null}
