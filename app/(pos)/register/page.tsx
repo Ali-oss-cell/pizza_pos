@@ -78,6 +78,7 @@ export default function RegisterPage(): React.ReactElement {
   const [paying, setPaying] = useState(false);
   const [cardPayingStripe, setCardPayingStripe] = useState(false);
   const [lastTicket, setLastTicket] = useState<number | null>(null);
+  const [orderNotes, setOrderNotes] = useState("");
   const [cashEnabled, setCashEnabled] = useState(true);
   const [cardTerminalEnabled, setCardTerminalEnabled] = useState(false);
   const [cardProvider, setCardProvider] = useState<"LINKLY" | "STRIPE" | "NONE" | "CASH">("NONE");
@@ -287,6 +288,7 @@ export default function RegisterPage(): React.ReactElement {
     setCart([]);
     setQuote(null);
     setPayError(null);
+    setOrderNotes("");
   }
 
   async function runPayment(
@@ -365,6 +367,7 @@ export default function RegisterPage(): React.ReactElement {
             : undefined,
       })),
       fulfillmentType,
+      notes: orderNotes.trim() || undefined,
     };
 
     await runPayment(payment, payload);
@@ -443,6 +446,8 @@ export default function RegisterPage(): React.ReactElement {
           cart={cart}
           cardTerminalEnabled={cardTerminalEnabled}
           cardProvider={cardProvider}
+          orderNotes={orderNotes}
+          onOrderNotesChange={setOrderNotes}
           cashEnabled={cashEnabled}
           fulfillmentType={fulfillmentType}
           lastTicket={lastTicket}

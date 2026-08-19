@@ -57,6 +57,7 @@ export interface PosOrderPayload {
     removedIngredients?: string[];
   }>;
   fulfillmentType: FulfillmentType;
+  notes?: string;
 }
 
 export interface PosOrderResult {

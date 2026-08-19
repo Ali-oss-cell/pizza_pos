@@ -37,6 +37,8 @@ interface CurrentOrderSidebarProps {
   cashEnabled: boolean;
   cardTerminalEnabled: boolean;
   cardProvider?: "LINKLY" | "STRIPE" | "NONE" | "CASH";
+  orderNotes: string;
+  onOrderNotesChange: (notes: string) => void;
   onFulfillmentChange: (type: FulfillmentType) => void;
   onIncrement: (key: string) => void;
   onDecrement: (key: string) => void;
@@ -56,6 +58,8 @@ export function CurrentOrderSidebar({
   cashEnabled,
   cardTerminalEnabled,
   cardProvider,
+  orderNotes,
+  onOrderNotesChange,
   onFulfillmentChange,
   onIncrement,
   onDecrement,
@@ -179,6 +183,18 @@ export function CurrentOrderSidebar({
         {payError ? (
           <p className="mb-1.5 text-xs font-medium text-red-300">{payError}</p>
         ) : null}
+
+        {/* Order notes */}
+        <div className="mb-2">
+          <textarea
+            className="w-full resize-none rounded-lg border border-white/10 bg-surface px-2.5 py-2 text-xs font-medium text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-accent/60"
+            maxLength={200}
+            placeholder="Order notes (e.g. no onions, extra sauce…)"
+            rows={2}
+            value={orderNotes}
+            onChange={(e) => onOrderNotesChange(e.target.value)}
+          />
+        </div>
 
         <p className="mb-1.5 text-center text-xs font-semibold text-outline">
           Pay total:{" "}
