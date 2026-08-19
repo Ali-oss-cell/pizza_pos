@@ -58,6 +58,7 @@ export interface PosOrderPayload {
   }>;
   fulfillmentType: FulfillmentType;
   notes?: string;
+  customerName?: string;
 }
 
 export interface PosOrderResult {

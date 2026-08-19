@@ -79,6 +79,7 @@ export default function RegisterPage(): React.ReactElement {
   const [cardPayingStripe, setCardPayingStripe] = useState(false);
   const [lastTicket, setLastTicket] = useState<number | null>(null);
   const [orderNotes, setOrderNotes] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [cashEnabled, setCashEnabled] = useState(true);
   const [cardTerminalEnabled, setCardTerminalEnabled] = useState(false);
   const [cardProvider, setCardProvider] = useState<"LINKLY" | "STRIPE" | "NONE" | "CASH">("NONE");
@@ -289,6 +290,7 @@ export default function RegisterPage(): React.ReactElement {
     setQuote(null);
     setPayError(null);
     setOrderNotes("");
+    setCustomerName("");
   }
 
   async function runPayment(
@@ -368,6 +370,7 @@ export default function RegisterPage(): React.ReactElement {
       })),
       fulfillmentType,
       notes: orderNotes.trim() || undefined,
+      customerName: customerName.trim() || undefined,
     };
 
     await runPayment(payment, payload);
@@ -425,20 +428,52 @@ export default function RegisterPage(): React.ReactElement {
             ))}
           </div>
 
-          <div className="pos-scrollbar grid flex-1 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 sm:gap-2.5">
-            {visibleItems.map((item) => (
-              <button
-                key={item.id}
-                className="flex min-h-item-card flex-col items-center justify-center rounded-xl bg-surface px-2 py-3 text-center transition active:scale-[0.98] active:bg-surface-container-high"
-                type="button"
-                onClick={() => openModifier(item)}
-              >
-                <p className="text-pos-item leading-snug">{item.name}</p>
-                <p className="mt-1 text-pos-price text-accent">
-                  {formatAud(getDisplayPrice(item))}
-                </p>
-              </button>
-            ))}
+          <div className="pos-scrollbar grid flex-1 auto-rows-max grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 sm:gap-2.5">
+            {visibleItems.map((item) => {
+              const inCartQty = cart
+                .filter((l) => l.menuItemId === item.id)
+                .reduce((s, l) => s + l.quantity, 0);
+
+              return (
+                <button
+                  key={item.id}
+                  className="group relative flex flex-col overflow-hidden rounded-xl bg-surface text-left transition active:scale-[0.97] active:bg-surface-container-high"
+                  type="button"
+                  onClick={() => openModifier(item)}
+                >
+                  {/* image */}
+                  {item.imageUrl ? (
+                    <div className="relative h-28 w-full shrink-0 overflow-hidden bg-surface-container-high sm:h-32">
+                      <img
+                        alt={item.imageAlt || item.name}
+                        className="h-full w-full object-cover transition-transform duration-200 group-active:scale-105"
+                        loading="lazy"
+                        src={item.imageUrl}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-20 w-full shrink-0 items-center justify-center bg-surface-container-high text-3xl">
+                      🍕
+                    </div>
+                  )}
+
+                  {/* in-cart badge */}
+                  {inCartQty > 0 ? (
+                    <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-xs font-bold text-white shadow">
+                      {inCartQty}
+                    </span>
+                  ) : null}
+
+                  {/* text */}
+                  <div className="flex flex-1 flex-col justify-between p-2.5">
+                    <p className="text-sm font-bold leading-snug">{item.name}</p>
+                    <p className="mt-1 text-sm font-bold text-accent">
+                      {formatAud(getDisplayPrice(item))}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -446,6 +481,8 @@ export default function RegisterPage(): React.ReactElement {
           cart={cart}
           cardTerminalEnabled={cardTerminalEnabled}
           cardProvider={cardProvider}
+          customerName={customerName}
+          onCustomerNameChange={setCustomerName}
           orderNotes={orderNotes}
           onOrderNotesChange={setOrderNotes}
           cashEnabled={cashEnabled}

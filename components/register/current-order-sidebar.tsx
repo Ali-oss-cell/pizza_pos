@@ -37,6 +37,8 @@ interface CurrentOrderSidebarProps {
   cashEnabled: boolean;
   cardTerminalEnabled: boolean;
   cardProvider?: "LINKLY" | "STRIPE" | "NONE" | "CASH";
+  customerName: string;
+  onCustomerNameChange: (name: string) => void;
   orderNotes: string;
   onOrderNotesChange: (notes: string) => void;
   onFulfillmentChange: (type: FulfillmentType) => void;
@@ -58,6 +60,8 @@ export function CurrentOrderSidebar({
   cashEnabled,
   cardTerminalEnabled,
   cardProvider,
+  customerName,
+  onCustomerNameChange,
   orderNotes,
   onOrderNotesChange,
   onFulfillmentChange,
@@ -139,7 +143,10 @@ export function CurrentOrderSidebar({
                       </p>
                     ) : null}
                     <p className="mt-0.5 text-xs font-medium text-outline">
-                      {formatAud(line.unitPrice)} each
+                      {formatAud(line.unitPrice)} ea ·{" "}
+                      <span className="text-on-surface/70">
+                        {formatAud(line.unitPrice * line.quantity)}
+                      </span>
                     </p>
                   </div>
                   <button
@@ -184,8 +191,16 @@ export function CurrentOrderSidebar({
           <p className="mb-1.5 text-xs font-medium text-red-300">{payError}</p>
         ) : null}
 
-        {/* Order notes */}
-        <div className="mb-2">
+        {/* Customer name + notes */}
+        <div className="mb-2 flex flex-col gap-1.5">
+          <input
+            className="w-full rounded-lg border border-white/10 bg-surface px-2.5 py-2 text-xs font-medium text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-accent/60"
+            maxLength={60}
+            placeholder="Order for… (customer name)"
+            type="text"
+            value={customerName}
+            onChange={(e) => onCustomerNameChange(e.target.value)}
+          />
           <textarea
             className="w-full resize-none rounded-lg border border-white/10 bg-surface px-2.5 py-2 text-xs font-medium text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-accent/60"
             maxLength={200}
@@ -196,12 +211,15 @@ export function CurrentOrderSidebar({
           />
         </div>
 
-        <p className="mb-1.5 text-center text-xs font-semibold text-outline">
-          Pay total:{" "}
-          <span className="text-sm font-bold text-on-surface">
+        <div className="mb-2 flex items-center justify-between rounded-lg bg-surface px-3 py-2">
+          <span className="text-xs font-semibold text-outline">
+            {cart.reduce((s, l) => s + l.quantity, 0)} item
+            {cart.reduce((s, l) => s + l.quantity, 0) !== 1 ? "s" : ""}
+          </span>
+          <span className="text-base font-bold text-on-surface">
             {formatAud(total)}
           </span>
-        </p>
+        </div>
 
         {cardTerminalEnabled ? (
           <button
