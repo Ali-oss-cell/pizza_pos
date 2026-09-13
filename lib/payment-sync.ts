@@ -67,6 +67,18 @@ export interface PosOrderResult {
   paymentStatus: string;
 }
 
+/** Thrown when card charge fails after the order was created (so recover is possible). */
+export class CardPaymentError extends Error {
+  constructor(
+    message: string,
+    readonly orderId?: string,
+    readonly ticketNumber?: number | null,
+  ) {
+    super(message);
+    this.name = "CardPaymentError";
+  }
+}
+
 export interface PendingPayment {
   clientRequestId: string;
   payment: "cash" | "card";
@@ -266,7 +278,11 @@ export async function submitCardPayment(
       error instanceof Error ? error.message : "Card payment failed";
     pending.lastError = lastError;
     upsertPending(pending);
-    throw new Error(lastError);
+    throw new CardPaymentError(
+      lastError,
+      order?.id ?? pending.orderId,
+      order?.ticketNumber ?? pending.ticketNumber,
+    );
   }
 }
 

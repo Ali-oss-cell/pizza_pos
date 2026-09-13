@@ -21,14 +21,17 @@ import { formatAud } from "@/lib/format";
 import { fetchMenuCategories, fetchMenuItems, getDisplayPrice } from "@/lib/menu";
 import { buildLocalQuote, normalizeQuoteResult } from "@/lib/pricing";
 import {
+  CardPaymentError,
   createClientRequestId,
   InventoryShortageError,
   listPendingPayments,
+  removePending,
   submitCardPayment,
   submitCashPayment,
   type InventoryShortage,
   type PosOrderPayload,
 } from "@/lib/payment-sync";
+import { recoverLinklyPayment } from "@/lib/linkly-payments";
 import { cn } from "@/lib/utils";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
 import type {
@@ -76,8 +79,11 @@ export default function RegisterPage(): React.ReactElement {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
-  const [cardPayingStripe, setCardPayingStripe] = useState(false);
+  const [cardPaying, setCardPaying] = useState(false);
   const [lastTicket, setLastTicket] = useState<number | null>(null);
+  const [recoverOrderId, setRecoverOrderId] = useState<string | null>(null);
+  const [recoverTicket, setRecoverTicket] = useState<number | null>(null);
+  const [recovering, setRecovering] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [cashEnabled, setCashEnabled] = useState(true);
@@ -301,9 +307,11 @@ export default function RegisterPage(): React.ReactElement {
     setPaying(true);
     setPayError(null);
     setOverrideError(null);
+    setRecoverOrderId(null);
+    setRecoverTicket(null);
 
-    if (payment === "card" && cardProvider === "STRIPE") {
-      setCardPayingStripe(true);
+    if (payment === "card") {
+      setCardPaying(true);
     }
 
     try {
@@ -315,6 +323,8 @@ export default function RegisterPage(): React.ReactElement {
       setLastTicket(order.ticketNumber);
       setShortageDialog(null);
       setOverrideReason("");
+      setRecoverOrderId(null);
+      setRecoverTicket(null);
 
       const stillPending = listPendingPayments().some(
         (entry) => entry.clientRequestId === payload.clientRequestId,
@@ -341,12 +351,65 @@ export default function RegisterPage(): React.ReactElement {
         return;
       }
 
+      if (error instanceof CardPaymentError) {
+        if (error.orderId) {
+          setRecoverOrderId(error.orderId);
+          setRecoverTicket(error.ticketNumber ?? null);
+        }
+        setPayError(error.message);
+        return;
+      }
+
       setPayError(
         error instanceof Error ? error.message : "Payment failed",
       );
     } finally {
       setPaying(false);
-      setCardPayingStripe(false);
+      setCardPaying(false);
+    }
+  }
+
+  async function handleRecoverCard() {
+    if (!recoverOrderId) return;
+    setRecovering(true);
+    setPayError(null);
+    try {
+      const result = await recoverLinklyPayment(recoverOrderId);
+      if (result.paymentStatus === "PAID") {
+        setLastTicket(recoverTicket);
+        for (const entry of listPendingPayments()) {
+          if (entry.orderId === recoverOrderId) {
+            removePending(entry.clientRequestId);
+          }
+        }
+        setRecoverOrderId(null);
+        setRecoverTicket(null);
+        clearCart();
+      } else if (result.linklyInProgress) {
+        setPayError(
+          "Payment still in progress on the pinpad — wait a few seconds and tap Recover again.",
+        );
+      } else if (result.linklyNotFound) {
+        setPayError(
+          result.message ??
+            "No transaction found on Linkly — safe to try card payment again.",
+        );
+        setRecoverOrderId(null);
+      } else {
+        setPayError(
+          result.linklyResponseText ||
+            `Payment status: ${result.paymentStatus}`,
+        );
+        if (result.paymentStatus === "FAILED") {
+          setRecoverOrderId(null);
+        }
+      }
+    } catch (error: unknown) {
+      setPayError(
+        error instanceof Error ? error.message : "Could not recover payment",
+      );
+    } finally {
+      setRecovering(false);
     }
   }
 
@@ -491,12 +554,16 @@ export default function RegisterPage(): React.ReactElement {
           payError={payError}
           paying={paying}
           quote={quote}
+          recoverOrderId={recoverOrderId}
+          recoverTicket={recoverTicket}
+          recovering={recovering}
           onClear={clearCart}
           onDecrement={decrementLine}
           onFulfillmentChange={setFulfillmentType}
           onIncrement={incrementLine}
           onPayCash={() => void submitOrder("cash")}
           onPayStripe={() => void submitOrder("card")}
+          onRecoverCard={() => void handleRecoverCard()}
           onRemove={removeLine}
         />
       </section>
@@ -595,8 +662,8 @@ export default function RegisterPage(): React.ReactElement {
         </div>
       ) : null}
 
-      {/* ── Stripe Terminal "present card" overlay ── */}
-      {cardPayingStripe ? (
+      {/* ── Card / EFTPOS waiting overlay (Linkly + Stripe) ── */}
+      {cardPaying ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <div className="flex w-[min(92vw,22rem)] flex-col items-center gap-5 rounded-2xl bg-surface-container p-8 text-center shadow-2xl">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-accent/15">
@@ -615,10 +682,14 @@ export default function RegisterPage(): React.ReactElement {
             </div>
             <div>
               <p className="text-lg font-bold text-on-surface">
-                Present card to reader
+                {cardProvider === "STRIPE"
+                  ? "Present card to reader"
+                  : "Waiting on EFTPOS"}
               </p>
               <p className="mt-1 text-sm text-outline">
-                Tap, insert, or swipe on the Stripe Terminal reader.
+                {cardProvider === "STRIPE"
+                  ? "Tap, insert, or swipe on the Stripe Terminal reader."
+                  : "Follow the prompts on the Linkly pinpad / Virtual PIN Pad."}
               </p>
             </div>
             <div className="flex gap-1.5">
