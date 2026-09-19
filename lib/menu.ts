@@ -24,7 +24,7 @@ export function getDisplayPrice(item: MenuItem, size?: string): number {
       item.sizeOptions.small,
       item.sizeOptions.large,
       item.sizeOptions.family,
-    ].find((option) => option.enabled);
+    ].find((option) => option?.enabled);
 
     if (enabled) {
       return enabled.price;
