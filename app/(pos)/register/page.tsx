@@ -22,16 +22,22 @@ import { fetchMenuCategories, fetchMenuItems, getDisplayPrice } from "@/lib/menu
 import { buildLocalQuote, normalizeQuoteResult } from "@/lib/pricing";
 import {
   CardPaymentError,
+  clearLastCardOrderFocus,
   createClientRequestId,
   InventoryShortageError,
   listPendingPayments,
+  readLastCardOrderFocus,
   removePending,
   submitCardPayment,
   submitCashPayment,
   type InventoryShortage,
   type PosOrderPayload,
 } from "@/lib/payment-sync";
-import { recoverLinklyPayment } from "@/lib/linkly-payments";
+import {
+  listUnresolvedCardPayments,
+  recoverLinklyPayment,
+} from "@/lib/linkly-payments";
+import { formatCardOutcomeMessage } from "@/lib/linkly-messages";
 import { cn } from "@/lib/utils";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
 import type {
@@ -83,12 +89,16 @@ export default function RegisterPage(): React.ReactElement {
   const [lastTicket, setLastTicket] = useState<number | null>(null);
   const [recoverOrderId, setRecoverOrderId] = useState<string | null>(null);
   const [recoverTicket, setRecoverTicket] = useState<number | null>(null);
+  const [recoverTxnRef, setRecoverTxnRef] = useState<string | null>(null);
   const [recovering, setRecovering] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [cashEnabled, setCashEnabled] = useState(true);
   const [cardTerminalEnabled, setCardTerminalEnabled] = useState(false);
+  const [linklyPaired, setLinklyPaired] = useState(true);
   const [cardProvider, setCardProvider] = useState<"LINKLY" | "STRIPE" | "NONE" | "CASH">("NONE");
+  const [cardOverlayTicket, setCardOverlayTicket] = useState<number | null>(null);
+  const [cardOverlayTxnRef, setCardOverlayTxnRef] = useState<string | null>(null);
   const [shortageDialog, setShortageDialog] =
     useState<ShortageDialogState | null>(null);
   const [overrideReason, setOverrideReason] = useState("");
@@ -104,6 +114,7 @@ export default function RegisterPage(): React.ReactElement {
         cashEnabled: boolean;
         cardTerminalEnabled: boolean;
         provider: "LINKLY" | "STRIPE" | "NONE" | "CASH";
+        linklyPaired?: boolean;
       }>("/pos/payment-methods"),
     ])
       .then(([nextCategories, nextItems, nextToppings, nextCrusts, methods]) => {
@@ -129,6 +140,7 @@ export default function RegisterPage(): React.ReactElement {
         setCashEnabled(methods.cashEnabled);
         setCardTerminalEnabled(methods.cardTerminalEnabled);
         setCardProvider(methods.provider ?? "NONE");
+        setLinklyPaired(methods.linklyPaired ?? true);
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -138,6 +150,220 @@ export default function RegisterPage(): React.ReactElement {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const focusRecover = useCallback(
+    (orderId: string, ticket?: number | null, txnRef?: string | null) => {
+      setRecoverOrderId(orderId);
+      setRecoverTicket(ticket ?? null);
+      setRecoverTxnRef(txnRef ?? null);
+    },
+    [],
+  );
+
+  const applyRecoverResult = useCallback(
+    async (orderId: string): Promise<"paid" | "in_progress" | "done_failed"> => {
+      const result = await recoverLinklyPayment(orderId);
+      if (result.linklyTxnRef) {
+        setRecoverTxnRef(result.linklyTxnRef);
+      }
+
+      if (result.paymentStatus === "PAID") {
+        setLastTicket(recoverTicket);
+        for (const entry of listPendingPayments()) {
+          if (entry.orderId === orderId) {
+            removePending(entry.clientRequestId);
+          }
+        }
+        clearLastCardOrderFocus();
+        setRecoverOrderId(null);
+        setRecoverTicket(null);
+        setRecoverTxnRef(null);
+        setPayError(
+          formatCardOutcomeMessage({
+            kind: "paid",
+            txnRef: result.linklyTxnRef,
+            ticketNumber: recoverTicket,
+          }),
+        );
+        return "paid";
+      }
+
+      if (result.linklyInProgress) {
+        setPayError(
+          formatCardOutcomeMessage({
+            kind: "in_progress",
+            txnRef: result.linklyTxnRef ?? recoverTxnRef,
+            ticketNumber: recoverTicket,
+          }),
+        );
+        return "in_progress";
+      }
+
+      if (result.linklyNotFound) {
+        setPayError(
+          formatCardOutcomeMessage({
+            kind: "not_found",
+            detail: result.message,
+            txnRef: result.linklyTxnRef ?? recoverTxnRef,
+            ticketNumber: recoverTicket,
+          }),
+        );
+        setRecoverOrderId(null);
+        clearLastCardOrderFocus();
+        return "done_failed";
+      }
+
+      setPayError(
+        formatCardOutcomeMessage({
+          kind: "failed",
+          detail: result.linklyResponseText || `Payment status: ${result.paymentStatus}`,
+          txnRef: result.linklyTxnRef ?? recoverTxnRef,
+          ticketNumber: recoverTicket,
+        }),
+      );
+      if (result.paymentStatus === "FAILED") {
+        setRecoverOrderId(null);
+        clearLastCardOrderFocus();
+      }
+      return "done_failed";
+    },
+    [recoverTicket, recoverTxnRef],
+  );
+
+  // Startup / power-fail: surface unresolved card payments.
+  useEffect(() => {
+    if (loading) return;
+
+    let cancelled = false;
+
+    async function loadUnresolved() {
+      try {
+        const [apiUnresolved, pending, lastFocus] = await Promise.all([
+          listUnresolvedCardPayments().catch(() => []),
+          Promise.resolve(listPendingPayments()),
+          Promise.resolve(readLastCardOrderFocus()),
+        ]);
+
+        if (cancelled) return;
+
+        const pendingCard = pending.find(
+          (entry) => entry.payment === "card" && entry.orderId,
+        );
+
+        const primary =
+          apiUnresolved[0] ??
+          (pendingCard
+            ? {
+                id: pendingCard.orderId!,
+                ticketNumber: pendingCard.ticketNumber ?? null,
+                linklyTxnRef: pendingCard.linklyTxnRef ?? null,
+              }
+            : null) ??
+          (lastFocus
+            ? {
+                id: lastFocus.orderId,
+                ticketNumber: lastFocus.ticketNumber ?? null,
+                linklyTxnRef: lastFocus.linklyTxnRef ?? null,
+              }
+            : null);
+
+        if (primary) {
+          focusRecover(
+            primary.id,
+            primary.ticketNumber,
+            primary.linklyTxnRef ?? null,
+          );
+          setPayError(
+            formatCardOutcomeMessage({
+              kind: "timeout",
+              txnRef: primary.linklyTxnRef,
+              ticketNumber: primary.ticketNumber,
+            }),
+          );
+        }
+      } catch {
+        // Non-fatal — register still usable.
+      }
+    }
+
+    void loadUnresolved();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, focusRecover]);
+
+  // Auto-poll recover while an unresolved card payment is focused.
+  useEffect(() => {
+    if (!recoverOrderId) return;
+
+    let cancelled = false;
+    let attempt = 0;
+    const maxMs = 3 * 60 * 1000;
+    const started = Date.now();
+    let timer: number | undefined;
+
+    async function poll() {
+      if (cancelled || !recoverOrderId) return;
+      setRecovering(true);
+      try {
+        const outcome = await applyRecoverResult(recoverOrderId);
+        if (outcome === "paid") {
+          clearCart({ keepPayError: true });
+          return;
+        }
+        if (outcome !== "in_progress") {
+          return;
+        }
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setPayError(
+            error instanceof Error
+              ? error.message
+              : "Could not recover payment",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setRecovering(false);
+        }
+      }
+
+      if (cancelled || Date.now() - started > maxMs) {
+        return;
+      }
+      attempt += 1;
+      const delay = Math.min(2000 * 2 ** Math.min(attempt - 1, 3), 15000);
+      timer = window.setTimeout(() => {
+        void poll();
+      }, delay);
+    }
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- poll when recover target changes
+  }, [recoverOrderId]);
+
+  // Show ticket / TxnRef on the waiting overlay once the order exists.
+  useEffect(() => {
+    if (!cardPaying) return;
+    const focus = readLastCardOrderFocus();
+    if (focus) {
+      setCardOverlayTicket(focus.ticketNumber ?? null);
+      setCardOverlayTxnRef(focus.linklyTxnRef ?? null);
+    }
+    const timer = window.setInterval(() => {
+      const next = readLastCardOrderFocus();
+      if (next) {
+        setCardOverlayTicket(next.ticketNumber ?? null);
+        setCardOverlayTxnRef(next.linklyTxnRef ?? null);
+      }
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [cardPaying]);
 
   const crustOptions = useMemo(
     () => mapApiCrusts(apiCrusts),
@@ -291,10 +517,12 @@ export default function RegisterPage(): React.ReactElement {
     setCart((current) => current.filter((line) => line.key !== key));
   }
 
-  function clearCart() {
+  function clearCart(options?: { keepPayError?: boolean }) {
     setCart([]);
     setQuote(null);
-    setPayError(null);
+    if (!options?.keepPayError) {
+      setPayError(null);
+    }
     setOrderNotes("");
     setCustomerName("");
   }
@@ -309,6 +537,9 @@ export default function RegisterPage(): React.ReactElement {
     setOverrideError(null);
     setRecoverOrderId(null);
     setRecoverTicket(null);
+    setRecoverTxnRef(null);
+    setCardOverlayTicket(null);
+    setCardOverlayTxnRef(null);
 
     if (payment === "card") {
       setCardPaying(true);
@@ -325,6 +556,7 @@ export default function RegisterPage(): React.ReactElement {
       setOverrideReason("");
       setRecoverOrderId(null);
       setRecoverTicket(null);
+      setRecoverTxnRef(null);
 
       const stillPending = listPendingPayments().some(
         (entry) => entry.clientRequestId === payload.clientRequestId,
@@ -334,11 +566,18 @@ export default function RegisterPage(): React.ReactElement {
         setPayError(
           payment === "cash"
             ? `Ticket #${order.ticketNumber ?? "?"} saved — cash payment will sync when connection is stable.`
-            : `Ticket #${order.ticketNumber ?? "?"} saved — card payment will retry automatically.`,
+            : formatCardOutcomeMessage({
+                kind: "timeout",
+                ticketNumber: order.ticketNumber,
+                txnRef: order.linklyTxnRef,
+              }),
         );
+        if (payment === "card" && order.id) {
+          focusRecover(order.id, order.ticketNumber, order.linklyTxnRef);
+        }
       }
 
-      clearCart();
+      clearCart({ keepPayError: stillPending });
     } catch (error: unknown) {
       if (error instanceof InventoryShortageError) {
         setShortageDialog({
@@ -353,10 +592,27 @@ export default function RegisterPage(): React.ReactElement {
 
       if (error instanceof CardPaymentError) {
         if (error.orderId) {
-          setRecoverOrderId(error.orderId);
-          setRecoverTicket(error.ticketNumber ?? null);
+          focusRecover(
+            error.orderId,
+            error.ticketNumber ?? null,
+            error.linklyTxnRef ?? null,
+          );
         }
-        setPayError(error.message);
+        setCardOverlayTxnRef(error.linklyTxnRef ?? null);
+        setPayError(
+          formatCardOutcomeMessage({
+            kind: error.linklyInProgress
+              ? "in_progress"
+              : error.message.toLowerCase().includes("timeout") ||
+                  error.message.toLowerCase().includes("network") ||
+                  error.message.toLowerCase().includes("failed to fetch")
+                ? "timeout"
+                : "declined",
+            detail: error.linklyResponseText || error.message,
+            txnRef: error.linklyTxnRef,
+            ticketNumber: error.ticketNumber,
+          }),
+        );
         return;
       }
 
@@ -366,6 +622,8 @@ export default function RegisterPage(): React.ReactElement {
     } finally {
       setPaying(false);
       setCardPaying(false);
+      setCardOverlayTicket(null);
+      setCardOverlayTxnRef(null);
     }
   }
 
@@ -374,35 +632,9 @@ export default function RegisterPage(): React.ReactElement {
     setRecovering(true);
     setPayError(null);
     try {
-      const result = await recoverLinklyPayment(recoverOrderId);
-      if (result.paymentStatus === "PAID") {
-        setLastTicket(recoverTicket);
-        for (const entry of listPendingPayments()) {
-          if (entry.orderId === recoverOrderId) {
-            removePending(entry.clientRequestId);
-          }
-        }
-        setRecoverOrderId(null);
-        setRecoverTicket(null);
-        clearCart();
-      } else if (result.linklyInProgress) {
-        setPayError(
-          "Payment still in progress on the pinpad — wait a few seconds and tap Recover again.",
-        );
-      } else if (result.linklyNotFound) {
-        setPayError(
-          result.message ??
-            "No transaction found on Linkly — safe to try card payment again.",
-        );
-        setRecoverOrderId(null);
-      } else {
-        setPayError(
-          result.linklyResponseText ||
-            `Payment status: ${result.paymentStatus}`,
-        );
-        if (result.paymentStatus === "FAILED") {
-          setRecoverOrderId(null);
-        }
+      const outcome = await applyRecoverResult(recoverOrderId);
+      if (outcome === "paid") {
+        clearCart({ keepPayError: true });
       }
     } catch (error: unknown) {
       setPayError(
@@ -544,6 +776,7 @@ export default function RegisterPage(): React.ReactElement {
           cart={cart}
           cardTerminalEnabled={cardTerminalEnabled}
           cardProvider={cardProvider}
+          linklyPaired={linklyPaired}
           customerName={customerName}
           onCustomerNameChange={setCustomerName}
           orderNotes={orderNotes}
@@ -556,8 +789,9 @@ export default function RegisterPage(): React.ReactElement {
           quote={quote}
           recoverOrderId={recoverOrderId}
           recoverTicket={recoverTicket}
+          recoverTxnRef={recoverTxnRef}
           recovering={recovering}
-          onClear={clearCart}
+          onClear={() => clearCart()}
           onDecrement={decrementLine}
           onFulfillmentChange={setFulfillmentType}
           onIncrement={incrementLine}
@@ -691,6 +925,16 @@ export default function RegisterPage(): React.ReactElement {
                   ? "Tap, insert, or swipe on the Stripe Terminal reader."
                   : "Follow the prompts on the Linkly pinpad / Virtual PIN Pad."}
               </p>
+              {(cardOverlayTicket != null || recoverTicket != null) && (
+                <p className="mt-2 text-xs font-semibold text-on-surface/80">
+                  Ticket #{cardOverlayTicket ?? recoverTicket}
+                </p>
+              )}
+              {(cardOverlayTxnRef || recoverTxnRef) && (
+                <p className="mt-1 text-xs text-outline">
+                  TxnRef {cardOverlayTxnRef ?? recoverTxnRef}
+                </p>
+              )}
             </div>
             <div className="flex gap-1.5">
               <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />

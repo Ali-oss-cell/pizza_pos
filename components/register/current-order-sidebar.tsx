@@ -36,11 +36,13 @@ interface CurrentOrderSidebarProps {
   paying: boolean;
   recoverOrderId?: string | null;
   recoverTicket?: number | null;
+  recoverTxnRef?: string | null;
   recovering?: boolean;
   onRecoverCard?: () => void;
   cashEnabled: boolean;
   cardTerminalEnabled: boolean;
   cardProvider?: "LINKLY" | "STRIPE" | "NONE" | "CASH";
+  linklyPaired?: boolean;
   customerName: string;
   onCustomerNameChange: (name: string) => void;
   orderNotes: string;
@@ -63,11 +65,13 @@ export function CurrentOrderSidebar({
   paying,
   recoverOrderId,
   recoverTicket,
+  recoverTxnRef,
   recovering,
   onRecoverCard,
   cashEnabled,
   cardTerminalEnabled,
   cardProvider,
+  linklyPaired = true,
   customerName,
   onCustomerNameChange,
   orderNotes,
@@ -82,7 +86,11 @@ export function CurrentOrderSidebar({
 }: CurrentOrderSidebarProps): React.ReactElement {
   const total = quote?.total ?? 0;
   const canPay = cart.length > 0 && quote !== null && !paying;
-  const canPayCard = canPay && cardTerminalEnabled;
+  const linklyNeedsPair =
+    cardProvider === "LINKLY" && cardTerminalEnabled && !linklyPaired;
+  const cardReady =
+    cardTerminalEnabled && (cardProvider !== "LINKLY" || linklyPaired);
+  const canPayCard = canPay && cardReady;
   const canPayCash = canPay && cashEnabled;
 
   return (
@@ -195,21 +203,33 @@ export function CurrentOrderSidebar({
       </div>
 
       <div className="shrink-0 border-t border-white/10 bg-surface-container p-2 shadow-[0_-6px_16px_rgba(0,0,0,0.35)]">
-        {payError ? (
-          <div className="mb-1.5 space-y-1.5">
-            <p className="text-xs font-medium text-red-300">{payError}</p>
-            {recoverOrderId && onRecoverCard ? (
-              <button
-                className="w-full rounded-lg bg-amber-500/20 px-2 py-2 text-xs font-bold text-amber-200 disabled:opacity-50"
-                disabled={recovering || paying}
-                type="button"
-                onClick={onRecoverCard}
-              >
-                {recovering
-                  ? "Checking pinpad…"
-                  : `Recover card payment${recoverTicket ? ` #${recoverTicket}` : ""}`}
-              </button>
+        {recoverOrderId && onRecoverCard ? (
+          <div className="mb-2 rounded-xl border border-amber-400/40 bg-amber-500/10 p-2.5">
+            <p className="text-xs font-semibold text-amber-100">
+              Unresolved card payment
+              {recoverTicket != null ? ` · Ticket #${recoverTicket}` : ""}
+            </p>
+            {recoverTxnRef ? (
+              <p className="mt-0.5 text-[11px] text-amber-200/80">
+                TxnRef {recoverTxnRef}
+              </p>
             ) : null}
+            <button
+              className="mt-2 min-h-[2.75rem] w-full rounded-xl bg-amber-500 px-3 text-sm font-bold text-zinc-950 disabled:opacity-50"
+              disabled={recovering || paying}
+              type="button"
+              onClick={onRecoverCard}
+            >
+              {recovering
+                ? "Checking pinpad…"
+                : "Recover card payment"}
+            </button>
+          </div>
+        ) : null}
+
+        {payError ? (
+          <div className="mb-1.5">
+            <p className="text-xs font-medium text-red-300">{payError}</p>
           </div>
         ) : null}
 
@@ -242,6 +262,12 @@ export function CurrentOrderSidebar({
             {formatAud(total)}
           </span>
         </div>
+
+        {linklyNeedsPair ? (
+          <p className="mb-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-center text-xs font-semibold text-amber-200">
+            Pinpad not paired — ask manager
+          </p>
+        ) : null}
 
         {cardTerminalEnabled ? (
           <button

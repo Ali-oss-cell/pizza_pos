@@ -9,6 +9,7 @@ import {
   refundCardPayment,
   runLinklySettlement,
 } from "@/lib/linkly-payments";
+import { formatCardOutcomeMessage, formatTxnRefLine } from "@/lib/linkly-messages";
 import { cn } from "@/lib/utils";
 
 interface OrderItem {
@@ -27,6 +28,7 @@ interface PosOrder {
   notes?: string | null;
   total: string | number;
   createdAt: string;
+  linklyTxnRef?: string | null;
   items?: OrderItem[];
 }
 
@@ -64,6 +66,9 @@ export default function OrdersPage(): React.ReactElement {
   const [info, setInfo] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [settling, setSettling] = useState(false);
+  const [refunding, setRefunding] = useState(false);
+  const [refundTicket, setRefundTicket] = useState<number | null>(null);
+  const [refundTxnRef, setRefundTxnRef] = useState<string | null>(null);
   const [filter, setFilter] = useState<"active" | "all">("active");
 
   async function loadOrders() {
@@ -105,23 +110,46 @@ export default function OrdersPage(): React.ReactElement {
     setBusyId(orderId);
     setError(null);
     setInfo(null);
+    const order = orders.find((o) => o.id === orderId);
     try {
       const result = await recoverLinklyPayment(orderId);
+      const txnRef = result.linklyTxnRef ?? order?.linklyTxnRef;
       if (result.paymentStatus === "PAID") {
-        setInfo(`Ticket recovered — payment confirmed PAID.`);
+        setInfo(
+          formatCardOutcomeMessage({
+            kind: "paid",
+            txnRef,
+            ticketNumber: order?.ticketNumber,
+          }),
+        );
         setOrders((prev) =>
           prev.map((o) =>
             o.id === orderId
-              ? { ...o, paymentStatus: "PAID", paymentMethod: "CARD_TERMINAL" }
+              ? {
+                  ...o,
+                  paymentStatus: "PAID",
+                  paymentMethod: "CARD_TERMINAL",
+                  linklyTxnRef: txnRef ?? o.linklyTxnRef,
+                }
               : o,
           ),
         );
       } else if (result.linklyInProgress) {
-        setInfo("Still in progress on pinpad — try Recover again shortly.");
+        setInfo(
+          formatCardOutcomeMessage({
+            kind: "in_progress",
+            txnRef,
+            ticketNumber: order?.ticketNumber,
+          }),
+        );
       } else if (result.linklyNotFound) {
         setInfo(
-          result.message ??
-            "No Linkly session found — safe to retry card on register.",
+          formatCardOutcomeMessage({
+            kind: "not_found",
+            detail: result.message,
+            txnRef,
+            ticketNumber: order?.ticketNumber,
+          }),
         );
         setOrders((prev) =>
           prev.map((o) =>
@@ -130,8 +158,12 @@ export default function OrdersPage(): React.ReactElement {
         );
       } else {
         setInfo(
-          result.linklyResponseText ||
-            `Status: ${result.paymentStatus}`,
+          formatCardOutcomeMessage({
+            kind: "failed",
+            detail: result.linklyResponseText || `Status: ${result.paymentStatus}`,
+            txnRef,
+            ticketNumber: order?.ticketNumber,
+          }),
         );
         setOrders((prev) =>
           prev.map((o) =>
@@ -157,14 +189,18 @@ export default function OrdersPage(): React.ReactElement {
       return;
     }
     setBusyId(order.id);
+    setRefunding(true);
+    setRefundTicket(order.ticketNumber);
+    setRefundTxnRef(order.linklyTxnRef ?? null);
     setError(null);
     setInfo(null);
     try {
       const result = await refundCardPayment(order.id);
+      const txnBit = formatTxnRefLine(order.linklyTxnRef);
       setInfo(
         result.alreadyRefunded
-          ? "Already refunded."
-          : `Refund approved${result.linklyResponseText ? ` — ${result.linklyResponseText}` : ""}.`,
+          ? `Already refunded.${txnBit ? ` (${txnBit})` : ""}`
+          : `Refund approved${result.linklyResponseText ? ` — ${result.linklyResponseText}` : ""}${txnBit ? ` (${txnBit})` : ""}.`,
       );
       setOrders((prev) =>
         prev.map((o) =>
@@ -175,6 +211,9 @@ export default function OrdersPage(): React.ReactElement {
       setError(err instanceof Error ? err.message : "Refund failed");
     } finally {
       setBusyId(null);
+      setRefunding(false);
+      setRefundTicket(null);
+      setRefundTxnRef(null);
     }
   }
 
@@ -293,6 +332,9 @@ export default function OrdersPage(): React.ReactElement {
                     </p>
                     <p className="text-xs text-outline">
                       {timeSince(order.createdAt)}
+                      {order.linklyTxnRef
+                        ? ` · TxnRef ${order.linklyTxnRef}`
+                        : ""}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -390,6 +432,51 @@ export default function OrdersPage(): React.ReactElement {
           })
         )}
       </div>
+
+      {refunding ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="flex w-[min(92vw,22rem)] flex-col items-center gap-5 rounded-2xl bg-surface-container p-8 text-center shadow-2xl">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-purple-500/15">
+              <svg
+                className="h-10 w-10 text-purple-300"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                viewBox="0 0 24 24"
+              >
+                <rect x="2" y="5" width="20" height="14" rx="2" />
+                <path d="M2 10h20" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-on-surface">
+                Waiting on EFTPOS for refund
+              </p>
+              <p className="mt-1 text-sm text-outline">
+                Complete the refund on the Linkly pinpad / Virtual PIN Pad.
+              </p>
+              {refundTicket != null ? (
+                <p className="mt-2 text-xs font-semibold text-on-surface/80">
+                  Ticket #{refundTicket}
+                </p>
+              ) : null}
+              {refundTxnRef ? (
+                <p className="mt-1 text-xs text-outline">TxnRef {refundTxnRef}</p>
+              ) : null}
+            </div>
+            <div className="flex gap-1.5">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.3s]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-purple-400 [animation-delay:-0.15s]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-purple-400" />
+            </div>
+            <p className="text-xs text-outline">
+              Do not close this screen — refund is processing.
+            </p>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

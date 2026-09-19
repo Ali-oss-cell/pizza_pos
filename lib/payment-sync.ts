@@ -1,8 +1,13 @@
 import { ApiError, apiFetch } from "@/lib/api";
+import {
+  getPosPaymentStatus,
+  recoverLinklyPayment,
+} from "@/lib/linkly-payments";
 import type { FulfillmentType } from "@/types/cart";
 
 const QUEUE_KEY = "pos_pending_payments";
 export const PENDING_PAYMENTS_CHANGED_EVENT = "pos-pending-payments-changed";
+export const LAST_CARD_ORDER_KEY = "pos_last_card_order";
 const MAX_ATTEMPTS = 5;
 const RETRY_MS = [0, 1500, 3000, 5000, 8000];
 
@@ -65,6 +70,9 @@ export interface PosOrderResult {
   id: string;
   ticketNumber: number | null;
   paymentStatus: string;
+  linklyTxnRef?: string | null;
+  linklySessionId?: string | null;
+  linklyResponseText?: string | null;
 }
 
 /** Thrown when card charge fails after the order was created (so recover is possible). */
@@ -73,6 +81,9 @@ export class CardPaymentError extends Error {
     message: string,
     readonly orderId?: string,
     readonly ticketNumber?: number | null,
+    readonly linklyTxnRef?: string | null,
+    readonly linklyResponseText?: string | null,
+    readonly linklyInProgress?: boolean,
   ) {
     super(message);
     this.name = "CardPaymentError";
@@ -84,9 +95,17 @@ export interface PendingPayment {
   payment: "cash" | "card";
   orderId?: string;
   ticketNumber?: number | null;
+  linklyTxnRef?: string | null;
   payload: PosOrderPayload;
   createdAt: string;
   lastError?: string;
+}
+
+export interface LastCardOrderFocus {
+  orderId: string;
+  ticketNumber?: number | null;
+  linklyTxnRef?: string | null;
+  savedAt: string;
 }
 
 function readQueue(): PendingPayment[] {
@@ -131,15 +150,75 @@ export function removePending(clientRequestId: string): void {
   );
 }
 
+export function saveLastCardOrderFocus(focus: LastCardOrderFocus): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(LAST_CARD_ORDER_KEY, JSON.stringify(focus));
+}
+
+export function readLastCardOrderFocus(): LastCardOrderFocus | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(LAST_CARD_ORDER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as LastCardOrderFocus;
+  } catch {
+    return null;
+  }
+}
+
+export function clearLastCardOrderFocus(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(LAST_CARD_ORDER_KEY);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function linklyFieldsFromBody(body: unknown): {
+  linklyTxnRef?: string | null;
+  linklyResponseText?: string | null;
+  linklyInProgress?: boolean;
+  orderId?: string;
+} {
+  if (!body || typeof body !== "object") {
+    return {};
+  }
+  const b = body as Record<string, unknown>;
+  // Nest may nest fields under message when exception is an object.
+  const nested =
+    b.message && typeof b.message === "object"
+      ? (b.message as Record<string, unknown>)
+      : null;
+  const src = nested ?? b;
+  return {
+    orderId: typeof src.orderId === "string" ? src.orderId : undefined,
+    linklyTxnRef:
+      typeof src.linklyTxnRef === "string" ? src.linklyTxnRef : null,
+    linklyResponseText:
+      typeof src.linklyResponseText === "string"
+        ? src.linklyResponseText
+        : typeof src.message === "string"
+          ? src.message
+          : null,
+    linklyInProgress: src.linklyInProgress === true || src.code === "LINKLY_IN_PROGRESS",
+  };
+}
+
 async function createPosOrder(payload: PosOrderPayload): Promise<PosOrderResult> {
-  return apiFetch<PosOrderResult>("/pos/orders", {
+  const order = await apiFetch<{
+    id: string;
+    ticketNumber: number | null;
+    paymentStatus: string;
+  }>("/pos/orders", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  return {
+    id: order.id,
+    ticketNumber: order.ticketNumber,
+    paymentStatus: order.paymentStatus,
+  };
 }
 
 async function markCashPaid(
@@ -161,12 +240,21 @@ async function markCashPaid(
   }
 }
 
-async function startCardPayment(
+type CardChargeResult = {
+  orderId: string;
+  ticketNumber?: number | null;
+  paymentStatus: string;
+  linklyTxnRef?: string | null;
+  linklySessionId?: string | null;
+  linklyResponseText?: string | null;
+};
+
+async function callCardPaymentEndpoint(
   orderId: string,
   inventoryOverrideReason?: string,
-): Promise<PosOrderResult> {
+): Promise<CardChargeResult> {
   try {
-    return await apiFetch<PosOrderResult>("/pos/payments/card", {
+    return await apiFetch<CardChargeResult>("/pos/payments/card", {
       method: "POST",
       body: JSON.stringify({
         orderId,
@@ -176,8 +264,123 @@ async function startCardPayment(
       }),
     });
   } catch (error: unknown) {
+    if (
+      error instanceof ApiError &&
+      error.status === 409 &&
+      error.body &&
+      typeof error.body === "object" &&
+      (error.body as { code?: string }).code === "INVENTORY_SHORTAGE"
+    ) {
+      throwIfInventoryShortage(error, orderId);
+    }
+    if (error instanceof ApiError && error.status === 409) {
+      const fields = linklyFieldsFromBody(error.body);
+      throw new CardPaymentError(
+        error.message ||
+          "Card payment is still in progress on the pinpad. Recover instead of retrying.",
+        fields.orderId ?? orderId,
+        null,
+        fields.linklyTxnRef,
+        fields.linklyResponseText,
+        true,
+      );
+    }
+    if (error instanceof ApiError && error.status === 400) {
+      const fields = linklyFieldsFromBody(error.body);
+      if (
+        fields.linklyTxnRef ||
+        fields.linklyResponseText ||
+        (error.body &&
+          typeof error.body === "object" &&
+          (error.body as { code?: string }).code === "LINKLY_DECLINED")
+      ) {
+        throw new CardPaymentError(
+          error.message,
+          fields.orderId ?? orderId,
+          null,
+          fields.linklyTxnRef,
+          fields.linklyResponseText,
+          false,
+        );
+      }
+    }
     throwIfInventoryShortage(error, orderId);
   }
+}
+
+/**
+ * Recover-before-retry for an existing order. Never starts a new Linkly
+ * purchase while a session may still be approved on the pinpad.
+ */
+export async function safeStartCardPayment(
+  orderId: string,
+  options?: {
+    inventoryOverrideReason?: string;
+    ticketNumber?: number | null;
+  },
+): Promise<PosOrderResult> {
+  const ticketNumber = options?.ticketNumber ?? null;
+
+  try {
+    const status = await getPosPaymentStatus(orderId);
+    if (status.paymentStatus === "PAID") {
+      return {
+        id: orderId,
+        ticketNumber,
+        paymentStatus: "PAID",
+        linklyTxnRef: status.linklyTxnRef,
+        linklySessionId: status.linklySessionId,
+      };
+    }
+
+    if (status.paymentStatus === "PROCESSING" && status.linklySessionId) {
+      const recovered = await recoverLinklyPayment(orderId);
+
+      if (recovered.paymentStatus === "PAID") {
+        return {
+          id: orderId,
+          ticketNumber,
+          paymentStatus: "PAID",
+          linklyTxnRef: recovered.linklyTxnRef,
+          linklySessionId: recovered.linklySessionId,
+          linklyResponseText: recovered.linklyResponseText,
+        };
+      }
+
+      if (recovered.linklyInProgress) {
+        throw new CardPaymentError(
+          "Payment still in progress on the pinpad — wait a few seconds and recover.",
+          orderId,
+          ticketNumber,
+          recovered.linklyTxnRef ?? status.linklyTxnRef,
+          recovered.linklyResponseText,
+          true,
+        );
+      }
+
+      // notFound / FAILED — fall through to a new card charge
+    }
+  } catch (error: unknown) {
+    if (error instanceof CardPaymentError) {
+      throw error;
+    }
+    // If status/recover fails (network), still attempt card endpoint —
+    // the API guard will recover-before-retry server-side.
+  }
+
+  const paid = await callCardPaymentEndpoint(
+    orderId,
+    options?.inventoryOverrideReason,
+  );
+
+  return {
+    id: paid.orderId ?? orderId,
+    ticketNumber: paid.ticketNumber ?? ticketNumber,
+    paymentStatus: paid.paymentStatus ?? "PAID",
+    linklyTxnRef: paid.linklyTxnRef,
+    linklySessionId: paid.linklySessionId,
+    linklyResponseText: paid.linklyResponseText,
+  };
 }
 
 export async function submitCashPayment(
@@ -217,8 +420,6 @@ export async function submitCashPayment(
       return { ...order, paymentStatus: "PAID" };
     } catch (error: unknown) {
       if (error instanceof InventoryShortageError) {
-        // Keep pending so the same clientRequestId can retry with override;
-        // flush will surface the error until manager overrides or stock is fixed.
         pending.lastError = error.message;
         upsertPending(pending);
         throw error;
@@ -258,15 +459,37 @@ export async function submitCardPayment(
     pending.ticketNumber = order.ticketNumber;
     upsertPending(pending);
 
-    const paid = await startCardPayment(
-      order.id,
-      options?.inventoryOverrideReason,
-    );
+    saveLastCardOrderFocus({
+      orderId: order.id,
+      ticketNumber: order.ticketNumber,
+      savedAt: new Date().toISOString(),
+    });
+
+    const paid = await safeStartCardPayment(order.id, {
+      inventoryOverrideReason: options?.inventoryOverrideReason,
+      ticketNumber: order.ticketNumber,
+    });
+
+    if (paid.linklyTxnRef) {
+      pending.linklyTxnRef = paid.linklyTxnRef;
+      upsertPending(pending);
+      saveLastCardOrderFocus({
+        orderId: order.id,
+        ticketNumber: order.ticketNumber,
+        linklyTxnRef: paid.linklyTxnRef,
+        savedAt: new Date().toISOString(),
+      });
+    }
+
     removePending(payload.clientRequestId);
+    clearLastCardOrderFocus();
     return {
       ...order,
       paymentStatus: paid.paymentStatus ?? "PAID",
       ticketNumber: paid.ticketNumber ?? order.ticketNumber,
+      linklyTxnRef: paid.linklyTxnRef,
+      linklySessionId: paid.linklySessionId,
+      linklyResponseText: paid.linklyResponseText,
     };
   } catch (error: unknown) {
     if (error instanceof InventoryShortageError) {
@@ -274,14 +497,45 @@ export async function submitCardPayment(
       upsertPending(pending);
       throw error;
     }
+    if (error instanceof CardPaymentError) {
+      pending.lastError = error.message;
+      if (error.linklyTxnRef) {
+        pending.linklyTxnRef = error.linklyTxnRef;
+      }
+      upsertPending(pending);
+      if (error.orderId ?? order?.id) {
+        saveLastCardOrderFocus({
+          orderId: error.orderId ?? order!.id,
+          ticketNumber: error.ticketNumber ?? order?.ticketNumber,
+          linklyTxnRef: error.linklyTxnRef ?? pending.linklyTxnRef,
+          savedAt: new Date().toISOString(),
+        });
+      }
+      throw new CardPaymentError(
+        error.message,
+        error.orderId ?? order?.id ?? pending.orderId,
+        error.ticketNumber ?? order?.ticketNumber ?? pending.ticketNumber,
+        error.linklyTxnRef ?? pending.linklyTxnRef,
+        error.linklyResponseText,
+        error.linklyInProgress,
+      );
+    }
     const lastError =
       error instanceof Error ? error.message : "Card payment failed";
     pending.lastError = lastError;
     upsertPending(pending);
+    if (order?.id) {
+      saveLastCardOrderFocus({
+        orderId: order.id,
+        ticketNumber: order.ticketNumber,
+        savedAt: new Date().toISOString(),
+      });
+    }
     throw new CardPaymentError(
       lastError,
       order?.id ?? pending.orderId,
       order?.ticketNumber ?? pending.ticketNumber,
+      pending.linklyTxnRef,
     );
   }
 }
@@ -309,14 +563,35 @@ export async function flushPendingPayments(): Promise<{
       if (entry.payment === "cash") {
         await markCashPaid(orderId);
       } else {
-        await startCardPayment(orderId);
+        const paid = await safeStartCardPayment(orderId, {
+          ticketNumber: entry.ticketNumber,
+        });
+        if (paid.paymentStatus !== "PAID" && paid.paymentStatus !== "REFUNDED") {
+          // Still unresolved — keep in queue
+          entry.lastError = "Card payment not confirmed yet";
+          upsertPending(entry);
+          failed += 1;
+          continue;
+        }
       }
 
       removePending(entry.clientRequestId);
+      if (entry.payment === "card") {
+        clearLastCardOrderFocus();
+      }
       synced += 1;
     } catch (error: unknown) {
       if (error instanceof InventoryShortageError) {
         entry.lastError = error.message;
+        upsertPending(entry);
+        failed += 1;
+        continue;
+      }
+      if (error instanceof CardPaymentError && error.linklyInProgress) {
+        entry.lastError = error.message;
+        if (error.linklyTxnRef) {
+          entry.linklyTxnRef = error.linklyTxnRef;
+        }
         upsertPending(entry);
         failed += 1;
         continue;

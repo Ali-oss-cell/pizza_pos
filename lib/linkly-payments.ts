@@ -34,10 +34,26 @@ export interface LinklySettlementResult {
   linklyResponseText: string;
 }
 
+export interface UnresolvedCardPayment {
+  id: string;
+  ticketNumber: number | null;
+  total: number;
+  createdAt: string;
+  paymentStatus: string;
+  linklyTxnRef?: string | null;
+  linklySessionId?: string | null;
+}
+
 export async function getPosPaymentStatus(
   orderId: string,
 ): Promise<LinklyPaymentStatus> {
   return apiFetch<LinklyPaymentStatus>(`/pos/payments/${orderId}/status`);
+}
+
+export async function listUnresolvedCardPayments(): Promise<
+  UnresolvedCardPayment[]
+> {
+  return apiFetch<UnresolvedCardPayment[]>("/pos/payments/unresolved");
 }
 
 export async function recoverLinklyPayment(
