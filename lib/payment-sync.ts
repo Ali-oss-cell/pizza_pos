@@ -285,6 +285,66 @@ async function callCardPaymentEndpoint(
         true,
       );
     }
+    // Cloud timeout / 503: VPP may already have approved — recover before failing.
+    if (
+      error instanceof ApiError &&
+      (error.status === 503 || error.status === 502 || error.status >= 500)
+    ) {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (attempt > 0) {
+          await sleep(1500 * attempt);
+        }
+        try {
+          const recovered = await recoverLinklyPayment(orderId);
+          if (recovered.paymentStatus === "PAID") {
+            return {
+              orderId,
+              paymentStatus: "PAID",
+              linklyTxnRef: recovered.linklyTxnRef,
+              linklySessionId: recovered.linklySessionId,
+              linklyResponseText: recovered.linklyResponseText,
+            };
+          }
+          if (recovered.linklyInProgress) {
+            throw new CardPaymentError(
+              "Payment still in progress on the pinpad — wait and recover.",
+              orderId,
+              null,
+              recovered.linklyTxnRef,
+              recovered.linklyResponseText,
+              true,
+            );
+          }
+          if (
+            recovered.paymentStatus === "FAILED" ||
+            recovered.linklyNotFound
+          ) {
+            throw new CardPaymentError(
+              recovered.linklyResponseText ||
+                recovered.message ||
+                error.message,
+              orderId,
+              null,
+              recovered.linklyTxnRef,
+              recovered.linklyResponseText,
+              false,
+            );
+          }
+        } catch (recoverError: unknown) {
+          if (recoverError instanceof CardPaymentError) {
+            throw recoverError;
+          }
+        }
+      }
+      throw new CardPaymentError(
+        error.message || "Card payment timed out — tap Recover.",
+        orderId,
+        null,
+        null,
+        null,
+        true,
+      );
+    }
     if (error instanceof ApiError && error.status === 400) {
       const fields = linklyFieldsFromBody(error.body);
       if (
@@ -562,24 +622,51 @@ export async function flushPendingPayments(): Promise<{
 
       if (entry.payment === "cash") {
         await markCashPaid(orderId);
-      } else {
-        const paid = await safeStartCardPayment(orderId, {
-          ticketNumber: entry.ticketNumber,
-        });
-        if (paid.paymentStatus !== "PAID" && paid.paymentStatus !== "REFUNDED") {
-          // Still unresolved — keep in queue
-          entry.lastError = "Card payment not confirmed yet";
-          upsertPending(entry);
-          failed += 1;
-          continue;
-        }
+        removePending(entry.clientRequestId);
+        synced += 1;
+        continue;
       }
 
-      removePending(entry.clientRequestId);
-      if (entry.payment === "card") {
+      // Card: recover only in background — never auto-start a new charge.
+      try {
+        const status = await getPosPaymentStatus(orderId);
+        if (status.paymentStatus === "PAID") {
+          removePending(entry.clientRequestId);
+          clearLastCardOrderFocus();
+          synced += 1;
+          continue;
+        }
+        if (status.paymentStatus === "PROCESSING" && status.linklySessionId) {
+          const recovered = await recoverLinklyPayment(orderId);
+          if (recovered.paymentStatus === "PAID") {
+            removePending(entry.clientRequestId);
+            clearLastCardOrderFocus();
+            synced += 1;
+            continue;
+          }
+          if (recovered.linklyInProgress) {
+            entry.lastError =
+              "Payment still in progress on pinpad — waiting to recover.";
+            upsertPending(entry);
+            failed += 1;
+            continue;
+          }
+          // Failed / not found — clear queue; staff starts a new sale manually.
+          removePending(entry.clientRequestId);
+          clearLastCardOrderFocus();
+          synced += 1;
+          continue;
+        }
+        // Already FAILED / UNPAID — stop retrying in the background.
+        removePending(entry.clientRequestId);
         clearLastCardOrderFocus();
+        synced += 1;
+      } catch (cardError: unknown) {
+        entry.lastError =
+          cardError instanceof Error ? cardError.message : "Card sync failed";
+        upsertPending(entry);
+        failed += 1;
       }
-      synced += 1;
     } catch (error: unknown) {
       if (error instanceof InventoryShortageError) {
         entry.lastError = error.message;
