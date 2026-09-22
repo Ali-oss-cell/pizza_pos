@@ -38,6 +38,7 @@ import {
   recoverLinklyPayment,
 } from "@/lib/linkly-payments";
 import { formatCardOutcomeMessage } from "@/lib/linkly-messages";
+import { useStore } from "@/lib/store-context";
 import { cn } from "@/lib/utils";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
 import type {
@@ -64,6 +65,7 @@ interface ShortageDialogState {
 
 export default function RegisterPage(): React.ReactElement {
   const { user } = useAuth();
+  const { selectedLocation } = useStore();
   const canOverrideInventory =
     user?.role === "MANAGER" || user?.role === "ADMIN";
 
@@ -140,7 +142,7 @@ export default function RegisterPage(): React.ReactElement {
         setCashEnabled(methods.cashEnabled);
         setCardTerminalEnabled(methods.cardTerminalEnabled);
         setCardProvider(methods.provider ?? "NONE");
-        setLinklyPaired(methods.linklyPaired ?? true);
+        setLinklyPaired(methods.linklyPaired ?? false);
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -149,7 +151,7 @@ export default function RegisterPage(): React.ReactElement {
         );
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedLocation?.id]);
 
   const focusRecover = useCallback(
     (orderId: string, ticket?: number | null, txnRef?: string | null) => {

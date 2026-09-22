@@ -5,6 +5,7 @@ import { Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useStore } from "@/lib/store-context";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,8 @@ export function PosShell({
   const { selectedStore, selectedLocation, clearSelection, stores } =
     useStore();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [linklyPaired, setLinklyPaired] = useState<boolean | null>(null);
+  const [cardTerminalEnabled, setCardTerminalEnabled] = useState(false);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -48,8 +51,48 @@ export function PosShell({
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!selectedStore || !selectedLocation) {
+      setLinklyPaired(null);
+      setCardTerminalEnabled(false);
+      return;
+    }
+
+    let cancelled = false;
+    void apiFetch<{
+      cardTerminalEnabled: boolean;
+      linklyPaired?: boolean;
+      provider: string;
+    }>("/pos/payment-methods")
+      .then((methods) => {
+        if (cancelled) return;
+        setCardTerminalEnabled(methods.cardTerminalEnabled);
+        setLinklyPaired(
+          methods.provider === "LINKLY"
+            ? Boolean(methods.linklyPaired)
+            : methods.cardTerminalEnabled,
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLinklyPaired(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStore?.slug, selectedLocation?.id]);
+
   const brandName = selectedStore?.name ?? "POS";
   const accent = selectedStore?.primaryColor?.trim() || undefined;
+  const pinpadLabel =
+    linklyPaired === null
+      ? null
+      : !cardTerminalEnabled
+        ? "Card off"
+        : linklyPaired
+          ? "Pinpad paired"
+          : "Pinpad not paired";
 
   return (
     <div
@@ -79,8 +122,22 @@ export function PosShell({
             {selectedLocation?.name
               ? `${pageLabel(pathname)} · ${selectedLocation.name}`
               : pageLabel(pathname)}
+            {pinpadLabel ? ` · ${pinpadLabel}` : ""}
           </p>
         </div>
+
+        {pinpadLabel ? (
+          <span
+            className={cn(
+              "hidden shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide sm:inline",
+              linklyPaired && cardTerminalEnabled
+                ? "bg-emerald-500/20 text-emerald-300"
+                : "bg-amber-500/20 text-amber-200",
+            )}
+          >
+            {pinpadLabel}
+          </span>
+        ) : null}
       </header>
 
       <PaymentSyncBanner />
@@ -141,8 +198,22 @@ export function PosShell({
             </p>
             <p className="px-1 text-xs text-outline">
               {selectedStore?.name ?? user.role}
+              {selectedLocation?.name ? ` · ${selectedLocation.name}` : ""}
             </p>
-            {stores.length > 1 ? (
+            {pinpadLabel ? (
+              <p
+                className={cn(
+                  "mt-1 px-1 text-xs font-semibold",
+                  linklyPaired && cardTerminalEnabled
+                    ? "text-emerald-300"
+                    : "text-amber-200",
+                )}
+              >
+                {pinpadLabel}
+              </p>
+            ) : null}
+            {stores.length > 1 ||
+            (selectedStore && selectedStore.locations.length > 1) ? (
               <button
                 className="mt-3 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-outline transition hover:bg-surface-container-high hover:text-on-surface"
                 type="button"
@@ -159,7 +230,7 @@ export function PosShell({
                   router.push("/select-store");
                 }}
               >
-                Switch store
+                Switch store / location
               </button>
             ) : null}
             <button
