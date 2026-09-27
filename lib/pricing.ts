@@ -39,7 +39,13 @@ export function calculateUnitPrice(options: {
   return roundMoney(price);
 }
 
-export function buildLocalQuote(lines: CartLine[]): QuoteResult {
+export function buildLocalQuote(
+  lines: CartLine[],
+  discount?: {
+    type: "PERCENT" | "AMOUNT" | "COMP";
+    value?: number;
+  },
+): QuoteResult {
   const quoteLines: QuoteLine[] = lines.map((line) => {
     const unitPrice = toMoney(line.unitPrice);
     const quantity = line.quantity;
@@ -61,12 +67,21 @@ export function buildLocalQuote(lines: CartLine[]): QuoteResult {
     quoteLines.reduce((sum, line) => sum + line.lineTotal, 0),
   );
 
+  let discountAmount = 0;
+  if (discount?.type === "COMP") {
+    discountAmount = subtotal;
+  } else if (discount?.type === "PERCENT") {
+    discountAmount = roundMoney((subtotal * (discount.value ?? 0)) / 100);
+  } else if (discount?.type === "AMOUNT") {
+    discountAmount = roundMoney(Math.min(subtotal, discount.value ?? 0));
+  }
+
   return {
     subtotal,
     deliveryFee: 0,
-    discountAmount: 0,
+    discountAmount,
     taxAmount: 0,
-    total: subtotal,
+    total: roundMoney(Math.max(0, subtotal - discountAmount)),
     lines: quoteLines,
   };
 }

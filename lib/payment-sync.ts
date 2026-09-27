@@ -64,6 +64,14 @@ export interface PosOrderPayload {
   fulfillmentType: FulfillmentType;
   notes?: string;
   customerName?: string;
+  customerPhone?: string;
+  tableNumber?: string;
+  pagerNumber?: string;
+  discountType?: "PERCENT" | "AMOUNT" | "COMP";
+  discountValue?: number;
+  discountReason?: string;
+  managerActionToken?: string;
+  registerId?: string;
 }
 
 export interface PosOrderResult {

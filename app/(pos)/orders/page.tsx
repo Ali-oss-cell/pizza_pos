@@ -10,6 +10,8 @@ import {
   runLinklySettlement,
 } from "@/lib/linkly-payments";
 import { formatCardOutcomeMessage, formatTxnRefLine } from "@/lib/linkly-messages";
+import { printKitchenTicket, printReceipt } from "@/lib/print";
+import { useStore } from "@/lib/store-context";
 import { cn } from "@/lib/utils";
 
 interface OrderItem {
@@ -58,6 +60,7 @@ function timeSince(iso: string): string {
 
 export default function OrdersPage(): React.ReactElement {
   const { user } = useAuth();
+  const { selectedStore } = useStore();
   const canManagePayments =
     user?.role === "MANAGER" || user?.role === "ADMIN";
 
@@ -181,6 +184,44 @@ export default function OrdersPage(): React.ReactElement {
   }
 
   async function handleRefund(order: PosOrder) {
+    if (order.paymentMethod === "CASH") {
+      const reason =
+        window.prompt("Cash refund reason?", "Customer request") ?? "";
+      if (!reason.trim()) return;
+      const pin = window.prompt("Manager PIN for cash refund") ?? "";
+      if (pin.length < 4) return;
+      setBusyId(order.id);
+      setError(null);
+      try {
+        const verified = await apiFetch<{ managerActionToken: string | null }>(
+          "/pos/auth/verify-pin",
+          { method: "POST", body: JSON.stringify({ pin }) },
+        );
+        if (!verified.managerActionToken) {
+          throw new Error("Manager PIN required");
+        }
+        await apiFetch("/pos/payments/refund-cash", {
+          method: "POST",
+          body: JSON.stringify({
+            orderId: order.id,
+            reason: reason.trim(),
+            managerActionToken: verified.managerActionToken,
+          }),
+        });
+        setInfo(`Cash refund recorded for #${order.ticketNumber ?? "—"}`);
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.id === order.id ? { ...o, paymentStatus: "REFUNDED" } : o,
+          ),
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Refund failed");
+      } finally {
+        setBusyId(null);
+      }
+      return;
+    }
+
     if (
       !window.confirm(
         `Refund card payment for ticket #${order.ticketNumber ?? "—"} (${formatAud(order.total)})? Customer must complete the refund on the pinpad.`,
@@ -315,7 +356,27 @@ export default function OrdersPage(): React.ReactElement {
             const canRefund =
               canManagePayments &&
               order.paymentStatus === "PAID" &&
-              order.paymentMethod === "CARD_TERMINAL";
+              (order.paymentMethod === "CARD_TERMINAL" ||
+                order.paymentMethod === "CASH");
+
+            function reprint(kind: "receipt" | "kitchen") {
+              const payload = {
+                storeName: selectedStore?.name ?? "POS",
+                ticketNumber: order.ticketNumber,
+                fulfillmentType: order.fulfillmentType,
+                notes: order.notes,
+                items: (order.items ?? []).map((item) => ({
+                  name: item.name,
+                  quantity: item.quantity,
+                  size: item.size,
+                })),
+                total: Number(order.total),
+                paymentMethod: order.paymentMethod,
+                createdAt: order.createdAt,
+              };
+              if (kind === "receipt") printReceipt(payload);
+              else printKitchenTicket(payload);
+            }
 
             return (
               <article
@@ -382,6 +443,20 @@ export default function OrdersPage(): React.ReactElement {
                 ) : null}
 
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className="rounded-lg bg-surface-container-high px-3 py-2 text-xs font-bold"
+                    type="button"
+                    onClick={() => reprint("receipt")}
+                  >
+                    Reprint receipt
+                  </button>
+                  <button
+                    className="rounded-lg bg-surface-container-high px-3 py-2 text-xs font-bold"
+                    type="button"
+                    onClick={() => reprint("kitchen")}
+                  >
+                    Reprint kitchen
+                  </button>
                   {canRecover ? (
                     <button
                       className="rounded-lg bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-200 disabled:opacity-50"
@@ -399,7 +474,7 @@ export default function OrdersPage(): React.ReactElement {
                       type="button"
                       onClick={() => void handleRefund(order)}
                     >
-                      Refund card
+                      {order.paymentMethod === "CASH" ? "Refund cash" : "Refund card"}
                     </button>
                   ) : null}
                   {ACTIVE_STATUSES.includes(order.status) ? (

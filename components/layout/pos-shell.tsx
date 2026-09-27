@@ -14,6 +14,7 @@ const NAV = [
   { href: "/register", label: "Register" },
   { href: "/kitchen", label: "Kitchen" },
   { href: "/orders", label: "Orders" },
+  { href: "/shift", label: "Shift" },
 ] as const;
 
 function pageLabel(pathname: string): string {
@@ -144,6 +145,14 @@ export function PosShell({
             {pinpadLabel}
           </span>
         ) : null}
+        <a
+          className="hidden rounded-xl border border-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-white/5 sm:inline"
+          href="/customer-display"
+          rel="noreferrer"
+          target="_blank"
+        >
+          Customer display
+        </a>
       </header>
 
       <PaymentSyncBanner />

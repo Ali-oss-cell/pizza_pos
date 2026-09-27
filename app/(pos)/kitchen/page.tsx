@@ -20,25 +20,31 @@ interface PosOrder {
   status: string;
   paymentStatus: string;
   fulfillmentType?: string | null;
+  tableNumber?: string | null;
+  pagerNumber?: string | null;
+  channel?: string | null;
   notes?: string | null;
   createdAt: string;
   items: KitchenItem[];
 }
 
-const COLUMNS: Array<{ key: "CONFIRMED" | "PREPARING" | "READY"; label: string; color: string }> = [
+const COLUMNS: Array<{ key: "CONFIRMED" | "PREPARING" | "READY" | "COMPLETED"; label: string; color: string }> = [
   { key: "CONFIRMED", label: "New", color: "bg-amber-500/15 border-amber-400/30 text-amber-300" },
   { key: "PREPARING", label: "Preparing", color: "bg-blue-500/15 border-blue-400/30 text-blue-300" },
   { key: "READY", label: "Ready", color: "bg-emerald-500/15 border-emerald-400/30 text-emerald-300" },
+  { key: "COMPLETED", label: "Done", color: "bg-zinc-500/15 border-zinc-400/30 text-zinc-300" },
 ];
 
 const NEXT_STATUS: Record<string, string> = {
   CONFIRMED: "PREPARING",
   PREPARING: "READY",
+  READY: "COMPLETED",
 };
 
 const ADVANCE_LABEL: Record<string, string> = {
   CONFIRMED: "Start preparing",
   PREPARING: "Mark ready",
+  READY: "Mark done",
 };
 
 /* ── time since order was placed ── */
@@ -81,6 +87,9 @@ function OrderCard({
           <p className="text-base font-bold leading-none">#{order.ticketNumber ?? "—"}</p>
           <p className="mt-0.5 text-xs font-medium text-outline">
             {order.fulfillmentType ?? "PICKUP"}
+            {order.tableNumber ? ` · T${order.tableNumber}` : ""}
+            {order.pagerNumber ? ` · P${order.pagerNumber}` : ""}
+            {order.channel && order.channel !== "POS" ? ` · ${order.channel}` : ""}
           </p>
         </div>
         <TimeSince createdAt={order.createdAt} />
@@ -212,7 +221,9 @@ export default function KitchenPage(): React.ReactElement {
     );
   }
 
-  const totalActive = orders.filter((o) => o.status !== "READY").length;
+  const totalActive = orders.filter(
+    (o) => o.status !== "READY" && o.status !== "COMPLETED",
+  ).length;
 
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col">
@@ -246,7 +257,7 @@ export default function KitchenPage(): React.ReactElement {
 
       {error ? <p className="mb-3 text-sm font-medium text-red-300">{error}</p> : null}
 
-      <div className="grid min-h-0 flex-1 gap-2 md:grid-cols-3 md:gap-3">
+      <div className="grid min-h-0 flex-1 gap-2 md:grid-cols-2 md:gap-3 xl:grid-cols-4">
         {COLUMNS.map((col) => {
           const colOrders = orders.filter((o) => o.status === col.key);
           return (

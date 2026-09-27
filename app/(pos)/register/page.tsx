@@ -4,7 +4,22 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CategoryPillNav } from "@/components/register/category-pill-nav";
 import { CurrentOrderSidebar } from "@/components/register/current-order-sidebar";
 import { ItemModifierModal } from "@/components/register/item-modifier-modal";
+import { ManagerPinModal } from "@/components/register/manager-pin-modal";
 import { ProductCard } from "@/components/register/product-card";
+import {
+  listParkedOrders,
+  parkOrder,
+  removeParkedOrder,
+  type ParkedOrder,
+} from "@/lib/parked-orders";
+import {
+  buildEscPosText,
+  printKitchenTicket,
+  printReceipt,
+  type PrintOrderPayload,
+} from "@/lib/print";
+import { useStaffPin } from "@/lib/staff-pin-context";
+import { useStore } from "@/lib/store-context";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -39,7 +54,6 @@ import {
   recoverLinklyPayment,
 } from "@/lib/linkly-payments";
 import { formatCardOutcomeMessage } from "@/lib/linkly-messages";
-import { useStore } from "@/lib/store-context";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
 import type {
   ApiCrustOption,
@@ -65,7 +79,8 @@ interface ShortageDialogState {
 
 export default function RegisterPage(): React.ReactElement {
   const { user } = useAuth();
-  const { selectedLocation } = useStore();
+  const { selectedLocation, selectedStore } = useStore();
+  const { managerActionToken, clearManagerToken } = useStaffPin();
   const canOverrideInventory =
     user?.role === "MANAGER" || user?.role === "ADMIN";
 
@@ -95,6 +110,24 @@ export default function RegisterPage(): React.ReactElement {
   const [recovering, setRecovering] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
   const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [tableNumber, setTableNumber] = useState("");
+  const [pagerNumber, setPagerNumber] = useState("");
+  const [discountType, setDiscountType] = useState<
+    "PERCENT" | "AMOUNT" | "COMP" | null
+  >(null);
+  const [discountValue, setDiscountValue] = useState(0);
+  const [discountReason, setDiscountReason] = useState("");
+  const [pendingDiscount, setPendingDiscount] = useState<{
+    type: "PERCENT" | "AMOUNT" | "COMP";
+    value: number;
+  } | null>(null);
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [recallOpen, setRecallOpen] = useState(false);
+  const [parked, setParked] = useState<ParkedOrder[]>([]);
+  const [search, setSearch] = useState("");
+  const [favouriteIds, setFavouriteIds] = useState<string[]>([]);
+  const [trainingMode, setTrainingMode] = useState(false);
   const [cashEnabled, setCashEnabled] = useState(true);
   const [cardTerminalEnabled, setCardTerminalEnabled] = useState(false);
   const [linklyPaired, setLinklyPaired] = useState(true);
@@ -144,6 +177,15 @@ export default function RegisterPage(): React.ReactElement {
         setCardProvider(methods.provider ?? "NONE");
         setLinklyPaired(methods.linklyPaired ?? false);
         setLoadError(null);
+        if (selectedLocation?.id) {
+          setParked(listParkedOrders(selectedLocation.id));
+        }
+        void apiFetch<{ posTrainingMode: boolean }>("/pos/settings")
+          .then((s) => setTrainingMode(s.posTrainingMode))
+          .catch(() => undefined);
+        void apiFetch<Array<{ menuItemId: string }>>("/pos/favourites")
+          .then((rows) => setFavouriteIds(rows.map((r) => r.menuItemId)))
+          .catch(() => undefined);
       })
       .catch((error: unknown) => {
         setLoadError(
@@ -372,13 +414,61 @@ export default function RegisterPage(): React.ReactElement {
     [apiCrusts],
   );
 
-  const visibleItems = useMemo(
-    () =>
-      items
-        .filter((item) => item.categorySlug === activeCategory)
-        .sort((a, b) => a.number - b.number),
-    [items, activeCategory],
+  const visibleItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let list = items.filter((item) => item.categorySlug === activeCategory);
+    if (q) {
+      list = items.filter(
+        (item) =>
+          item.name.toLowerCase().includes(q) ||
+          String(item.number).includes(q) ||
+          (item as MenuItem & { sku?: string }).sku?.toLowerCase().includes(q),
+      );
+    }
+    return list.sort((a, b) => a.number - b.number);
+  }, [items, activeCategory, search]);
+
+  const favouriteItems = useMemo(
+    () => items.filter((item) => favouriteIds.includes(item.id)).slice(0, 12),
+    [items, favouriteIds],
   );
+
+  const discountPayload = useMemo(
+    () =>
+      discountType
+        ? { type: discountType, value: discountValue }
+        : undefined,
+    [discountType, discountValue],
+  );
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (event.key === "/") {
+        event.preventDefault();
+        const el = document.querySelector<HTMLInputElement>(
+          'input[placeholder^="Search menu"]',
+        );
+        el?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const channel = new BroadcastChannel("pos-customer-display");
+    channel.postMessage({
+      type: "cart",
+      storeName: selectedStore?.name ?? "POS",
+      cart,
+      quote,
+      customerName,
+    });
+    return () => channel.close();
+  }, [cart, quote, customerName, selectedStore?.name]);
 
   const refreshQuote = useCallback(async (lines: CartLine[]) => {
     if (lines.length === 0) {
@@ -386,7 +476,7 @@ export default function RegisterPage(): React.ReactElement {
       return;
     }
 
-    setQuote(buildLocalQuote(lines));
+    setQuote(buildLocalQuote(lines, discountPayload));
 
     try {
       const result = await apiFetch<QuoteResult>("/pos/orders/quote", {
@@ -403,20 +493,27 @@ export default function RegisterPage(): React.ReactElement {
                 ? line.removedIngredients
                 : undefined,
           })),
+          discount: discountPayload
+            ? {
+                type: discountPayload.type,
+                value: discountPayload.value,
+                reason: discountReason || undefined,
+              }
+            : undefined,
         }),
       });
 
       setQuote(normalizeQuoteResult(result));
       setPayError(null);
     } catch (error: unknown) {
-      setQuote(buildLocalQuote(lines));
+      setQuote(buildLocalQuote(lines, discountPayload));
       setPayError(
         error instanceof Error
           ? `${error.message} (showing local total)`
           : "Server quote unavailable (showing local total)",
       );
     }
-  }, []);
+  }, [discountPayload, discountReason]);
 
   useEffect(() => {
     if (cart.length === 0) {
@@ -424,14 +521,14 @@ export default function RegisterPage(): React.ReactElement {
       return;
     }
 
-    setQuote(buildLocalQuote(cart));
+    setQuote(buildLocalQuote(cart, discountPayload));
 
     const timer = window.setTimeout(() => {
       void refreshQuote(cart);
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [cart, refreshQuote]);
+  }, [cart, refreshQuote, discountPayload]);
 
   function openModifier(item: MenuItem) {
     const category = categories.find(
@@ -527,6 +624,61 @@ export default function RegisterPage(): React.ReactElement {
     }
     setOrderNotes("");
     setCustomerName("");
+    setCustomerPhone("");
+    setTableNumber("");
+    setPagerNumber("");
+    setDiscountType(null);
+    setDiscountValue(0);
+    setDiscountReason("");
+    clearManagerToken();
+  }
+
+  function printPaidOrder(order: {
+    ticketNumber: number | null;
+    total?: number;
+  }) {
+    const payload: PrintOrderPayload = {
+      storeName: selectedStore?.name ?? "POS",
+      locationName: selectedLocation?.name,
+      ticketNumber: order.ticketNumber,
+      fulfillmentType,
+      tableNumber: tableNumber || null,
+      pagerNumber: pagerNumber || null,
+      customerName: customerName || null,
+      customerPhone: customerPhone || null,
+      notes: orderNotes || null,
+      items: cart.map((line) => ({
+        name: line.name,
+        quantity: line.quantity,
+        detail: line.detail,
+        unitPrice: line.unitPrice,
+        lineTotal: line.unitPrice * line.quantity,
+        size: line.size,
+        crust: line.crust,
+      })),
+      subtotal: quote?.subtotal,
+      discountAmount: quote?.discountAmount,
+      total: quote?.total ?? order.total ?? 0,
+      paymentMethod: "PAID",
+      isTraining: trainingMode,
+      createdAt: new Date().toLocaleString(),
+    };
+    printReceipt(payload);
+    window.setTimeout(() => printKitchenTicket(payload), 600);
+    void apiFetch("/pos/print/escpos", {
+      method: "POST",
+      body: JSON.stringify({
+        target: "receipt",
+        text: buildEscPosText(payload, "receipt"),
+      }),
+    }).catch(() => undefined);
+    void apiFetch("/pos/print/escpos", {
+      method: "POST",
+      body: JSON.stringify({
+        target: "kitchen",
+        text: buildEscPosText(payload, "kitchen"),
+      }),
+    }).catch(() => undefined);
   }
 
   async function runPayment(
@@ -559,6 +711,7 @@ export default function RegisterPage(): React.ReactElement {
       setRecoverOrderId(null);
       setRecoverTicket(null);
       setRecoverTxnRef(null);
+      printPaidOrder(order);
 
       const stillPending = listPendingPayments().some(
         (entry) => entry.clientRequestId === payload.clientRequestId,
@@ -668,6 +821,17 @@ export default function RegisterPage(): React.ReactElement {
       fulfillmentType,
       notes: orderNotes.trim() || undefined,
       customerName: customerName.trim() || undefined,
+      customerPhone: customerPhone.trim() || undefined,
+      tableNumber: tableNumber.trim() || undefined,
+      pagerNumber: pagerNumber.trim() || undefined,
+      ...(discountType
+        ? {
+            discountType,
+            discountValue,
+            discountReason: discountReason.trim() || undefined,
+            managerActionToken: managerActionToken ?? undefined,
+          }
+        : {}),
     };
 
     await runPayment(payment, payload);
@@ -711,6 +875,33 @@ export default function RegisterPage(): React.ReactElement {
     <>
       <section className="grid h-full min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)] lg:gap-5">
         <div className="glass-panel flex min-h-0 flex-col rounded-2xl p-3 sm:p-4">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500"
+              placeholder="Search menu (/ to focus)"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setSearch("");
+              }}
+            />
+          </div>
+
+          {favouriteItems.length > 0 ? (
+            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+              {favouriteItems.map((item) => (
+                <button
+                  key={`fav-${item.id}`}
+                  className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200"
+                  type="button"
+                  onClick={() => openModifier(item)}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           <CategoryPillNav
             activeCategory={activeCategory}
             categories={categories}
@@ -742,8 +933,131 @@ export default function RegisterPage(): React.ReactElement {
           linklyPaired={linklyPaired}
           customerName={customerName}
           onCustomerNameChange={setCustomerName}
+          customerPhone={customerPhone}
+          onCustomerPhoneChange={setCustomerPhone}
+          tableNumber={tableNumber}
+          onTableNumberChange={setTableNumber}
+          pagerNumber={pagerNumber}
+          onPagerNumberChange={setPagerNumber}
           orderNotes={orderNotes}
           onOrderNotesChange={setOrderNotes}
+          discountType={discountType}
+          discountValue={discountValue}
+          onDiscountChange={(type, value) => {
+            setDiscountType(type);
+            setDiscountValue(value);
+          }}
+          onRequestDiscount={() => {
+            const raw = window.prompt(
+              "Discount: enter % (e.g. 10), $ amount (e.g. 5), or COMP",
+              discountType === "COMP"
+                ? "COMP"
+                : discountType === "PERCENT"
+                  ? String(discountValue)
+                  : discountType === "AMOUNT"
+                    ? `$${discountValue}`
+                    : "10",
+            );
+            if (raw == null) return;
+            const trimmed = raw.trim().toUpperCase();
+            if (trimmed === "COMP") {
+              setPendingDiscount({ type: "COMP", value: 0 });
+              setPinModalOpen(true);
+              return;
+            }
+            if (trimmed.startsWith("$")) {
+              setPendingDiscount({
+                type: "AMOUNT",
+                value: Number(trimmed.slice(1)) || 0,
+              });
+              setPinModalOpen(true);
+              return;
+            }
+            setPendingDiscount({
+              type: "PERCENT",
+              value: Number(trimmed) || 0,
+            });
+            setPinModalOpen(true);
+          }}
+          onPark={() => {
+            if (!selectedLocation?.id || cart.length === 0) return;
+            const label =
+              window.prompt("Park as…", customerName || "Held order") ??
+              "Held order";
+            parkOrder(selectedLocation.id, {
+              label,
+              cart,
+              fulfillmentType,
+              customerName,
+              customerPhone,
+              orderNotes,
+              tableNumber,
+              pagerNumber,
+              discountType,
+              discountValue,
+              discountReason,
+            });
+            setParked(listParkedOrders(selectedLocation.id));
+            clearCart();
+          }}
+          onOpenRecall={() => {
+            if (selectedLocation?.id) {
+              setParked(listParkedOrders(selectedLocation.id));
+            }
+            setRecallOpen(true);
+          }}
+          parkedCount={parked.length}
+          onLookupPhone={() => {
+            if (!customerPhone.trim()) return;
+            void apiFetch<
+              Array<{
+                guestName?: string;
+                notes?: string;
+                items: Array<{
+                  menuItemId: string;
+                  name: string;
+                  quantity: number;
+                  price: number | string;
+                  size?: string;
+                  crust?: string;
+                }>;
+              }>
+            >(`/pos/orders/by-phone?phone=${encodeURIComponent(customerPhone)}`)
+              .then((rows) => {
+                const last = rows[0];
+                if (!last) {
+                  setPayError("No prior orders for that phone");
+                  return;
+                }
+                if (customerName.trim() === "" && last.guestName) {
+                  setCustomerName(last.guestName);
+                }
+                if (
+                  window.confirm(
+                    `Load last order for ${last.guestName ?? customerPhone}?`,
+                  )
+                ) {
+                  setCart(
+                    last.items.map((item, index) => ({
+                      key: `${item.menuItemId}-${index}`,
+                      menuItemId: item.menuItemId,
+                      name: item.name,
+                      quantity: item.quantity,
+                      size: item.size ?? undefined,
+                      crust: item.crust ?? undefined,
+                      toppingIds: [],
+                      removedIngredients: [],
+                      unitPrice: Number(item.price),
+                    })),
+                  );
+                }
+              })
+              .catch((err: unknown) =>
+                setPayError(
+                  err instanceof Error ? err.message : "Lookup failed",
+                ),
+              );
+          }}
           cashEnabled={cashEnabled}
           fulfillmentType={fulfillmentType}
           lastTicket={lastTicket}
@@ -754,6 +1068,7 @@ export default function RegisterPage(): React.ReactElement {
           recoverTicket={recoverTicket}
           recoverTxnRef={recoverTxnRef}
           recovering={recovering}
+          trainingMode={trainingMode}
           onClear={() => clearCart()}
           onDecrement={decrementLine}
           onDismissPayError={() => setPayError(null)}
@@ -765,6 +1080,87 @@ export default function RegisterPage(): React.ReactElement {
           onRemove={removeLine}
         />
       </section>
+
+      <ManagerPinModal
+        open={pinModalOpen}
+        title="Manager PIN for discount"
+        description="Approve this discount"
+        onCancel={() => {
+          setPinModalOpen(false);
+          setPendingDiscount(null);
+        }}
+        onApproved={() => {
+          if (pendingDiscount) {
+            setDiscountType(pendingDiscount.type);
+            setDiscountValue(pendingDiscount.value);
+            setDiscountReason("Manager approved");
+          }
+          setPendingDiscount(null);
+          setPinModalOpen(false);
+        }}
+      />
+
+      {recallOpen ? (
+        <div className="fixed inset-0 z-[65] flex items-end justify-center bg-zinc-950/70 p-4 backdrop-blur-sm sm:items-center">
+          <div className="glass-panel w-full max-w-md rounded-2xl p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-zinc-50">Parked orders</h3>
+              <button
+                className="text-sm text-zinc-400"
+                type="button"
+                onClick={() => setRecallOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <ul className="mt-3 max-h-80 space-y-2 overflow-y-auto">
+              {parked.length === 0 ? (
+                <li className="py-6 text-center text-sm text-zinc-500">
+                  No parked orders
+                </li>
+              ) : (
+                parked.map((entry) => (
+                  <li key={entry.id}>
+                    <button
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left"
+                      type="button"
+                      onClick={() => {
+                        if (
+                          cart.length > 0 &&
+                          !window.confirm("Replace current cart?")
+                        ) {
+                          return;
+                        }
+                        setCart(entry.cart);
+                        setFulfillmentType(entry.fulfillmentType);
+                        setCustomerName(entry.customerName);
+                        setCustomerPhone(entry.customerPhone);
+                        setOrderNotes(entry.orderNotes);
+                        setTableNumber(entry.tableNumber);
+                        setPagerNumber(entry.pagerNumber);
+                        setDiscountType(entry.discountType ?? null);
+                        setDiscountValue(entry.discountValue ?? 0);
+                        setDiscountReason(entry.discountReason ?? "");
+                        removeParkedOrder(entry.id);
+                        if (selectedLocation?.id) {
+                          setParked(listParkedOrders(selectedLocation.id));
+                        }
+                        setRecallOpen(false);
+                      }}
+                    >
+                      <p className="font-semibold text-zinc-100">{entry.label}</p>
+                      <p className="text-xs text-zinc-400">
+                        {entry.cart.length} lines ·{" "}
+                        {new Date(entry.createdAt).toLocaleTimeString()}
+                      </p>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        </div>
+      ) : null}
 
       {modifierState ? (
         <ItemModifierModal

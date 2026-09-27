@@ -1,6 +1,8 @@
 import { RequireAuth } from "@/components/auth/require-auth";
 import { RequireStore } from "@/components/auth/require-store";
+import { StaffLockScreen } from "@/components/register/manager-pin-modal";
 import { PosShell } from "@/components/layout/pos-shell";
+import { StaffPinProvider } from "@/lib/staff-pin-context";
 
 export default function PosLayout({
   children,
@@ -10,7 +12,10 @@ export default function PosLayout({
   return (
     <RequireAuth>
       <RequireStore>
-        <PosShell>{children}</PosShell>
+        <StaffPinProvider>
+          <PosShell>{children}</PosShell>
+          <StaffLockScreen />
+        </StaffPinProvider>
       </RequireStore>
     </RequireAuth>
   );
