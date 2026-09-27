@@ -1,7 +1,7 @@
 "use client";
 
 import { PaymentSyncBanner } from "@/components/layout/payment-sync-banner";
-import { Menu, X } from "lucide-react";
+import { ArrowLeft, LogOut, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -14,7 +14,6 @@ const NAV = [
   { href: "/register", label: "Register" },
   { href: "/kitchen", label: "Kitchen" },
   { href: "/orders", label: "Orders" },
-  { href: "/shift", label: "Shift" },
 ] as const;
 
 function pageLabel(pathname: string): string {
@@ -116,6 +115,17 @@ export function PosShell({
           <Menu className="h-5 w-5" />
         </button>
 
+        {pathname !== "/register" ? (
+          <button
+            className="inline-flex min-h-touch items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-semibold text-zinc-100"
+            type="button"
+            onClick={() => router.push("/register")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+        ) : null}
+
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-semibold tracking-tight text-zinc-50 sm:text-lg">
             {brandName}
@@ -153,6 +163,14 @@ export function PosShell({
         >
           Customer display
         </a>
+        <button
+          className="inline-flex min-h-touch items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-semibold text-zinc-100"
+          type="button"
+          onClick={() => logout()}
+        >
+          <LogOut className="h-4 w-4" />
+          <span className="hidden sm:inline">Log out</span>
+        </button>
       </header>
 
       <PaymentSyncBanner />

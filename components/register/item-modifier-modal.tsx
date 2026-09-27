@@ -46,7 +46,22 @@ export function ItemModifierModal({
   const showSizes = Boolean(category?.supportsSizeOptions && item.sizeOptions);
   const showCrust = showSizes && crustOptions.length > 0;
   const showExtras = toppingCategories.length > 0;
-  const ingredients = useMemo(() => resolveDefaultIngredients(item), [item]);
+  const canRemoveIngredients = Boolean(
+    category?.supportsSizeOptions || category?.supportsExtras,
+  );
+  const ingredients = useMemo(
+    () => (canRemoveIngredients ? resolveDefaultIngredients(item) : []),
+    [canRemoveIngredients, item],
+  );
+  const includedItems = useMemo(() => {
+    if (canRemoveIngredients || !item.description.trim()) {
+      return [];
+    }
+    return item.description
+      .split(/[,•\n]/)
+      .map((part) => part.replace(/^and\s+/i, "").replace(/\.$/, "").trim())
+      .filter(Boolean);
+  }, [canRemoveIngredients, item.description]);
 
   const defaultSize = useMemo(() => {
     const enabled = SIZE_LABELS.find(
@@ -233,10 +248,13 @@ export function ItemModifierModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/75 p-2 backdrop-blur-sm sm:items-center sm:p-4">
       <div className="glass-panel flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-zinc-950/80">
-        <div className="shrink-0 border-b border-white/10 px-4 py-3.5">
-          <h3 className="text-lg font-semibold text-zinc-50">{item.name}</h3>
+        <div className="shrink-0 border-b border-white/10 px-5 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+            {showSizes ? "Customize" : "Deal"}
+          </p>
+          <h3 className="mt-1 text-xl font-semibold text-zinc-50">{item.name}</h3>
           {lineDetail ? (
-            <p className="mt-1 text-sm font-medium text-zinc-400">{lineDetail}</p>
+            <p className="mt-1 text-sm text-zinc-400">{lineDetail}</p>
           ) : null}
         </div>
 
@@ -299,10 +317,34 @@ export function ItemModifierModal({
             </section>
           ) : null}
 
+          {includedItems.length > 0 ? (
+            <section>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                What&apos;s included
+              </p>
+              <ul className="mt-3 space-y-2">
+                {includedItems.map((line) => (
+                  <li
+                    key={line}
+                    className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-3"
+                  >
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-rose-400" />
+                    <span className="text-base font-medium leading-snug text-zinc-50">
+                      {line}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           {ingredients.length > 0 ? (
             <section>
-              <p className="text-xs font-bold uppercase tracking-wider text-outline">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
                 Remove ingredients
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Tap an item to leave it off.
               </p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {ingredients.map((ingredient) => {
@@ -312,10 +354,10 @@ export function ItemModifierModal({
                     <button
                       key={ingredient}
                       className={cn(
-                        "flex min-h-touch items-center justify-between rounded-xl px-3 text-sm font-semibold",
+                        "flex min-h-touch items-center justify-between rounded-xl border px-3 py-2.5 text-sm font-semibold",
                         isRemoved
-                          ? "bg-surface text-outline line-through"
-                          : "bg-surface text-on-surface",
+                          ? "border-white/5 bg-white/[0.02] text-zinc-500 line-through"
+                          : "border-white/10 bg-white/[0.06] text-zinc-50",
                       )}
                       type="button"
                       onClick={() => toggleIngredient(ingredient)}
@@ -324,7 +366,7 @@ export function ItemModifierModal({
                       {isRemoved ? (
                         <Plus className="h-4 w-4 shrink-0" />
                       ) : (
-                        <Minus className="h-4 w-4 shrink-0 text-accent" />
+                        <Minus className="h-4 w-4 shrink-0 text-rose-300" />
                       )}
                     </button>
                   );

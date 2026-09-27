@@ -23,6 +23,7 @@ export interface PosUser {
   firstName: string;
   lastName: string;
   role: PosRole | "USER";
+  posPinMustChange?: boolean;
   stores: PosStore[];
 }
 
