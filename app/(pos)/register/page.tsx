@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CategoryPillNav } from "@/components/register/category-pill-nav";
 import { CurrentOrderSidebar } from "@/components/register/current-order-sidebar";
 import { ItemModifierModal } from "@/components/register/item-modifier-modal";
+import { ProductCard } from "@/components/register/product-card";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -17,8 +19,7 @@ import {
   filterToppingsForItem,
   mapApiCrusts,
 } from "@/lib/customizations";
-import { formatAud } from "@/lib/format";
-import { fetchMenuCategories, fetchMenuItems, getDisplayPrice } from "@/lib/menu";
+import { fetchMenuCategories, fetchMenuItems } from "@/lib/menu";
 import { buildLocalQuote, normalizeQuoteResult } from "@/lib/pricing";
 import {
   CardPaymentError,
@@ -39,7 +40,6 @@ import {
 } from "@/lib/linkly-payments";
 import { formatCardOutcomeMessage } from "@/lib/linkly-messages";
 import { useStore } from "@/lib/store-context";
-import { cn } from "@/lib/utils";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
 import type {
   ApiCrustOption,
@@ -693,82 +693,43 @@ export default function RegisterPage(): React.ReactElement {
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center text-outline">
+      <div className="flex min-h-[50vh] items-center justify-center text-zinc-400">
         Loading menu…
       </div>
     );
   }
 
   if (loadError) {
-    return <p className="text-red-300">{loadError}</p>;
+    return (
+      <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        {loadError}
+      </p>
+    );
   }
 
   return (
     <>
-      <section className="grid h-full min-h-0 flex-1 gap-2 md:grid-cols-[1.65fr_1fr] md:gap-2">
-        <div className="flex min-h-0 flex-col rounded-xl bg-surface-container p-2">
-          <div className="pos-scrollbar mb-2 flex gap-1.5 overflow-x-auto pb-1 sm:gap-2">
-            {categories.map((category) => (
-              <button
-                key={category.slug}
-                className={cn(
-                  "min-h-category-tab shrink-0 rounded-lg px-3 py-2 text-sm font-bold sm:px-5",
-                  activeCategory === category.slug
-                    ? "bg-accent text-white shadow-sm shadow-accent/25"
-                    : "bg-surface-container-high text-on-surface",
-                )}
-                type="button"
-                onClick={() => setActiveCategory(category.slug)}
-              >
-                {category.label}
-              </button>
-            ))}
-          </div>
+      <section className="grid h-full min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(20rem,1fr)] lg:gap-5">
+        <div className="glass-panel flex min-h-0 flex-col rounded-2xl p-3 sm:p-4">
+          <CategoryPillNav
+            activeCategory={activeCategory}
+            categories={categories}
+            onChange={setActiveCategory}
+          />
 
-          <div className="pos-scrollbar grid flex-1 auto-rows-max grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 sm:gap-2.5">
+          <div className="pos-scrollbar grid flex-1 auto-rows-max grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3 sm:gap-4 xl:grid-cols-4">
             {visibleItems.map((item) => {
               const inCartQty = cart
                 .filter((l) => l.menuItemId === item.id)
                 .reduce((s, l) => s + l.quantity, 0);
 
               return (
-                <button
+                <ProductCard
                   key={item.id}
-                  className="group relative flex flex-col overflow-hidden rounded-xl bg-surface text-left transition active:scale-[0.97] active:bg-surface-container-high"
-                  type="button"
-                  onClick={() => openModifier(item)}
-                >
-                  {/* image */}
-                  {item.imageUrl ? (
-                    <div className="relative h-28 w-full shrink-0 overflow-hidden bg-surface-container-high sm:h-32">
-                      <img
-                        alt={item.imageAlt || item.name}
-                        className="h-full w-full object-cover transition-transform duration-200 group-active:scale-105"
-                        loading="lazy"
-                        src={item.imageUrl}
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex h-20 w-full shrink-0 items-center justify-center bg-surface-container-high text-3xl">
-                      🍕
-                    </div>
-                  )}
-
-                  {/* in-cart badge */}
-                  {inCartQty > 0 ? (
-                    <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-accent text-xs font-bold text-white shadow">
-                      {inCartQty}
-                    </span>
-                  ) : null}
-
-                  {/* text */}
-                  <div className="flex flex-1 flex-col justify-between p-2.5">
-                    <p className="text-sm font-bold leading-snug">{item.name}</p>
-                    <p className="mt-1 text-sm font-bold text-accent">
-                      {formatAud(getDisplayPrice(item))}
-                    </p>
-                  </div>
-                </button>
+                  inCartQty={inCartQty}
+                  item={item}
+                  onSelect={openModifier}
+                />
               );
             })}
           </div>
@@ -795,6 +756,7 @@ export default function RegisterPage(): React.ReactElement {
           recovering={recovering}
           onClear={() => clearCart()}
           onDecrement={decrementLine}
+          onDismissPayError={() => setPayError(null)}
           onFulfillmentChange={setFulfillmentType}
           onIncrement={incrementLine}
           onPayCash={() => void submitOrder("cash")}
@@ -817,22 +779,20 @@ export default function RegisterPage(): React.ReactElement {
       ) : null}
 
       {shortageDialog ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-surface p-4 shadow-xl">
-            <h2 className="text-lg font-bold text-on-surface">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/70 p-4 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-md rounded-2xl p-5 shadow-2xl">
+            <h2 className="text-lg font-semibold text-zinc-50">
               Insufficient stock
             </h2>
-            <p className="mt-1 text-sm text-outline">{shortageDialog.message}</p>
+            <p className="mt-1 text-sm text-zinc-400">{shortageDialog.message}</p>
             <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto text-sm">
               {shortageDialog.shortages.map((row) => (
                 <li
                   key={row.stockItemId}
-                  className="rounded-lg bg-surface-container px-3 py-2"
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5"
                 >
-                  <span className="font-semibold text-on-surface">
-                    {row.name}
-                  </span>
-                  <span className="mt-0.5 block text-outline">
+                  <span className="font-semibold text-zinc-100">{row.name}</span>
+                  <span className="mt-0.5 block text-zinc-400">
                     need {row.required}
                     {row.unit ? ` ${row.unit}` : ""} · on hand {row.onHand}
                     {row.unit ? ` ${row.unit}` : ""} · short {row.shortfall}
@@ -844,10 +804,10 @@ export default function RegisterPage(): React.ReactElement {
 
             {canOverrideInventory ? (
               <div className="mt-4 space-y-2">
-                <label className="block text-sm font-medium text-on-surface">
+                <label className="block text-sm font-medium text-zinc-200">
                   Manager override reason
                   <textarea
-                    className="mt-1 w-full rounded-lg border border-outline/30 bg-surface-container px-3 py-2 text-sm text-on-surface"
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-rose-500/30"
                     rows={2}
                     value={overrideReason}
                     onChange={(event) => setOverrideReason(event.target.value)}
@@ -855,12 +815,12 @@ export default function RegisterPage(): React.ReactElement {
                   />
                 </label>
                 {overrideError ? (
-                  <p className="text-sm text-red-400">{overrideError}</p>
+                  <p className="text-sm text-rose-300">{overrideError}</p>
                 ) : null}
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    className="flex-1 rounded-lg bg-surface-container-high px-3 py-2 text-sm font-semibold"
+                    className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-semibold text-zinc-200"
                     disabled={paying}
                     onClick={() => {
                       setShortageDialog(null);
@@ -872,7 +832,7 @@ export default function RegisterPage(): React.ReactElement {
                   </button>
                   <button
                     type="button"
-                    className="flex-1 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white"
+                    className="flex-1 rounded-xl bg-pay-gradient px-3 py-2.5 text-sm font-semibold text-white shadow-pay-glow"
                     disabled={paying}
                     onClick={() => void confirmInventoryOverride()}
                   >
@@ -882,12 +842,12 @@ export default function RegisterPage(): React.ReactElement {
               </div>
             ) : (
               <div className="mt-4">
-                <p className="text-sm text-outline">
+                <p className="text-sm text-zinc-400">
                   Ask a manager to override, or restock before paying.
                 </p>
                 <button
                   type="button"
-                  className="mt-3 w-full rounded-lg bg-surface-container-high px-3 py-2 text-sm font-semibold"
+                  className="mt-3 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-semibold"
                   onClick={() => setShortageDialog(null)}
                 >
                   Close
@@ -898,13 +858,12 @@ export default function RegisterPage(): React.ReactElement {
         </div>
       ) : null}
 
-      {/* ── Card / EFTPOS waiting overlay (Linkly + Stripe) ── */}
       {cardPaying ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="flex w-[min(92vw,22rem)] flex-col items-center gap-5 rounded-2xl bg-surface-container p-8 text-center shadow-2xl">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-accent/15">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/75 backdrop-blur-md">
+          <div className="glass-panel flex w-[min(92vw,22rem)] flex-col items-center gap-5 rounded-2xl p-8 text-center">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-rose-500/20 to-violet-500/20 ring-1 ring-white/10">
               <svg
-                className="h-10 w-10 text-accent"
+                className="h-10 w-10 text-rose-300"
                 fill="none"
                 stroke="currentColor"
                 strokeLinecap="round"
@@ -917,33 +876,33 @@ export default function RegisterPage(): React.ReactElement {
               </svg>
             </div>
             <div>
-              <p className="text-lg font-bold text-on-surface">
+              <p className="text-lg font-semibold text-zinc-50">
                 {cardProvider === "STRIPE"
                   ? "Present card to reader"
                   : "Waiting on EFTPOS"}
               </p>
-              <p className="mt-1 text-sm text-outline">
+              <p className="mt-1 text-sm text-zinc-400">
                 {cardProvider === "STRIPE"
                   ? "Tap, insert, or swipe on the Stripe Terminal reader."
                   : "Follow the prompts on the Linkly pinpad / Virtual PIN Pad."}
               </p>
               {(cardOverlayTicket != null || recoverTicket != null) && (
-                <p className="mt-2 text-xs font-semibold text-on-surface/80">
+                <p className="mt-2 text-xs font-semibold text-zinc-300">
                   Ticket #{cardOverlayTicket ?? recoverTicket}
                 </p>
               )}
               {(cardOverlayTxnRef || recoverTxnRef) && (
-                <p className="mt-1 text-xs text-outline">
+                <p className="mt-1 font-mono text-xs text-zinc-500">
                   TxnRef {cardOverlayTxnRef ?? recoverTxnRef}
                 </p>
               )}
             </div>
             <div className="flex gap-1.5">
-              <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-accent" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-rose-400 [animation-delay:-0.3s]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-violet-400 [animation-delay:-0.15s]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-rose-400" />
             </div>
-            <p className="text-xs text-outline">
+            <p className="text-xs text-zinc-500">
               Do not close this screen — payment is processing.
             </p>
           </div>

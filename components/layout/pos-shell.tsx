@@ -85,6 +85,7 @@ export function PosShell({
 
   const brandName = selectedStore?.name ?? "POS";
   const accent = selectedStore?.primaryColor?.trim() || undefined;
+  const pinpadOk = Boolean(linklyPaired && cardTerminalEnabled);
   const pinpadLabel =
     linklyPaired === null
       ? null
@@ -103,38 +104,43 @@ export function PosShell({
           : undefined
       }
     >
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-white/10 bg-surface-container px-2 sm:px-3">
+      <header className="glass-header sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 px-3 sm:px-4">
         <button
           aria-expanded={menuOpen}
           aria-label="Open menu"
-          className="flex min-h-touch min-w-touch items-center justify-center rounded-lg bg-surface-container-high text-on-surface"
+          className="flex min-h-touch min-w-touch items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-100 transition hover:bg-white/10"
           type="button"
           onClick={() => setMenuOpen(true)}
         >
-          <Menu className="h-6 w-6" />
+          <Menu className="h-5 w-5" />
         </button>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate font-display text-base font-bold tracking-tight sm:text-lg">
+          <p className="truncate text-base font-semibold tracking-tight text-zinc-50 sm:text-lg">
             {brandName}
           </p>
-          <p className="truncate text-xs font-semibold text-outline sm:text-sm">
+          <p className="truncate text-xs font-medium text-zinc-400">
             {selectedLocation?.name
               ? `${pageLabel(pathname)} · ${selectedLocation.name}`
               : pageLabel(pathname)}
-            {pinpadLabel ? ` · ${pinpadLabel}` : ""}
           </p>
         </div>
 
         {pinpadLabel ? (
           <span
             className={cn(
-              "hidden shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide sm:inline",
-              linklyPaired && cardTerminalEnabled
-                ? "bg-emerald-500/20 text-emerald-300"
-                : "bg-amber-500/20 text-amber-200",
+              "hidden shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold sm:inline-flex",
+              pinpadOk
+                ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/25"
+                : "bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/25",
             )}
           >
+            <span
+              className={cn(
+                "h-1.5 w-1.5 rounded-full",
+                pinpadOk ? "bg-emerald-400" : "bg-amber-400",
+              )}
+            />
             {pinpadLabel}
           </span>
         ) : null}
@@ -145,7 +151,7 @@ export function PosShell({
       {menuOpen ? (
         <button
           aria-label="Close menu"
-          className="fixed inset-0 z-40 bg-black/60"
+          className="fixed inset-0 z-40 bg-zinc-950/70 backdrop-blur-sm"
           type="button"
           onClick={() => setMenuOpen(false)}
         />
@@ -153,15 +159,15 @@ export function PosShell({
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[min(18rem,82vw)] flex-col bg-surface-container shadow-2xl transition-transform duration-200",
+          "fixed inset-y-0 left-0 z-50 flex w-[min(18rem,82vw)] flex-col border-r border-white/10 bg-zinc-950/95 shadow-2xl backdrop-blur-xl transition-transform duration-200",
           menuOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <div className="flex h-12 items-center justify-between border-b border-white/10 px-3">
-          <p className="text-sm font-bold">Menu</p>
+        <div className="flex h-14 items-center justify-between border-b border-white/10 px-4">
+          <p className="text-sm font-semibold text-zinc-100">Menu</p>
           <button
             aria-label="Close menu"
-            className="flex min-h-touch min-w-touch items-center justify-center rounded-lg bg-surface-container-high"
+            className="flex min-h-touch min-w-touch items-center justify-center rounded-xl bg-white/5"
             type="button"
             onClick={() => setMenuOpen(false)}
           >
@@ -169,7 +175,7 @@ export function PosShell({
           </button>
         </div>
 
-        <nav className="flex-1 space-y-2 p-3">
+        <nav className="flex-1 space-y-1.5 p-3">
           {NAV.map((item) => {
             const active = pathname === item.href;
 
@@ -177,10 +183,10 @@ export function PosShell({
               <Link
                 key={item.href}
                 className={cn(
-                  "flex min-h-touch-lg items-center rounded-xl px-4 text-base font-bold",
+                  "flex min-h-touch-lg items-center rounded-xl px-4 text-base font-semibold transition",
                   active
-                    ? "bg-accent text-white shadow-sm shadow-accent/20"
-                    : "bg-surface-container-high text-on-surface",
+                    ? "bg-gradient-to-r from-rose-500 to-violet-500 text-white shadow-pay-glow"
+                    : "text-zinc-300 hover:bg-white/5",
                 )}
                 href={item.href}
                 onClick={() => setMenuOpen(false)}
@@ -193,20 +199,18 @@ export function PosShell({
 
         {user ? (
           <div className="mt-auto border-t border-white/10 p-3">
-            <p className="px-1 text-sm font-semibold text-on-surface">
+            <p className="px-1 text-sm font-semibold text-zinc-100">
               {user.firstName} {user.lastName}
             </p>
-            <p className="px-1 text-xs text-outline">
+            <p className="px-1 text-xs text-zinc-400">
               {selectedStore?.name ?? user.role}
               {selectedLocation?.name ? ` · ${selectedLocation.name}` : ""}
             </p>
             {pinpadLabel ? (
               <p
                 className={cn(
-                  "mt-1 px-1 text-xs font-semibold",
-                  linklyPaired && cardTerminalEnabled
-                    ? "text-emerald-300"
-                    : "text-amber-200",
+                  "mt-1 px-1 text-xs font-medium",
+                  pinpadOk ? "text-emerald-300" : "text-amber-200",
                 )}
               >
                 {pinpadLabel}
@@ -215,7 +219,7 @@ export function PosShell({
             {stores.length > 1 ||
             (selectedStore && selectedStore.locations.length > 1) ? (
               <button
-                className="mt-3 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-outline transition hover:bg-surface-container-high hover:text-on-surface"
+                className="mt-3 w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium text-zinc-400 transition hover:bg-white/5 hover:text-zinc-100"
                 type="button"
                 onClick={() => {
                   const currentName = selectedStore?.name ?? "this store";
@@ -234,7 +238,7 @@ export function PosShell({
               </button>
             ) : null}
             <button
-              className="mt-2 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-outline transition hover:bg-surface-container-high hover:text-on-surface"
+              className="mt-1 w-full rounded-xl px-3 py-2.5 text-left text-sm font-medium text-zinc-400 transition hover:bg-white/5 hover:text-zinc-100"
               type="button"
               onClick={() => {
                 setMenuOpen(false);
@@ -247,7 +251,7 @@ export function PosShell({
         ) : null}
       </aside>
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-1.5 sm:p-2">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4 lg:p-5">
         {children}
       </main>
     </div>

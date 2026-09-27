@@ -14,16 +14,16 @@ export function PaymentSyncBanner(): React.ReactElement | null {
   return (
     <div
       className={cn(
-        "shrink-0 border-b px-3 py-2 text-sm",
+        "shrink-0 border-b px-4 py-2.5 text-sm backdrop-blur-md",
         isOnline
-          ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
-          : "border-red-500/30 bg-red-500/10 text-red-100",
+          ? "border-amber-500/20 bg-amber-500/10 text-amber-100"
+          : "border-rose-500/20 bg-rose-500/10 text-rose-100",
       )}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           {!isOnline ? <WifiOff className="h-4 w-4 shrink-0" /> : null}
-          <p>
+          <p className="text-xs font-medium sm:text-sm">
             {!isOnline
               ? "Offline — payments are saved and will sync when connection returns."
               : `${pending.length} payment${pending.length === 1 ? "" : "s"} waiting to sync.`}
@@ -32,7 +32,7 @@ export function PaymentSyncBanner(): React.ReactElement | null {
 
         {isOnline && pending.length > 0 ? (
           <button
-            className="inline-flex items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-xs font-semibold"
+            className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1.5 text-xs font-semibold ring-1 ring-amber-400/30"
             disabled={syncing}
             type="button"
             onClick={() => void retrySync()}

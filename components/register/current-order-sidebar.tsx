@@ -1,6 +1,7 @@
 "use client";
 
-import { HandCoins, Minus, Plus, Trash2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { AlertCircle, HandCoins, Minus, Plus, Trash2, X } from "lucide-react";
 import { formatAud } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
@@ -8,23 +9,10 @@ import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
 const FULFILLMENT_OPTIONS: Array<{
   value: FulfillmentType;
   label: string;
-  activeClass: string;
 }> = [
-  {
-    value: "PICKUP",
-    label: "PICKUP",
-    activeClass: "bg-accent text-white shadow-md shadow-accent/40 ring-2 ring-white/20",
-  },
-  {
-    value: "DINE_IN",
-    label: "DINE IN",
-    activeClass: "bg-blue-500 text-white shadow-md shadow-blue-500/40 ring-2 ring-white/20",
-  },
-  {
-    value: "COUNTER",
-    label: "COUNTER",
-    activeClass: "bg-emerald-500 text-white shadow-md shadow-emerald-500/40 ring-2 ring-white/20",
-  },
+  { value: "PICKUP", label: "Pickup" },
+  { value: "DINE_IN", label: "Dine in" },
+  { value: "COUNTER", label: "Counter" },
 ];
 
 interface CurrentOrderSidebarProps {
@@ -39,6 +27,7 @@ interface CurrentOrderSidebarProps {
   recoverTxnRef?: string | null;
   recovering?: boolean;
   onRecoverCard?: () => void;
+  onDismissPayError?: () => void;
   cashEnabled: boolean;
   cardTerminalEnabled: boolean;
   cardProvider?: "LINKLY" | "STRIPE" | "NONE" | "CASH";
@@ -68,6 +57,7 @@ export function CurrentOrderSidebar({
   recoverTxnRef,
   recovering,
   onRecoverCard,
+  onDismissPayError,
   cashEnabled,
   cardTerminalEnabled,
   cardProvider,
@@ -85,6 +75,7 @@ export function CurrentOrderSidebar({
   onPayCash,
 }: CurrentOrderSidebarProps): React.ReactElement {
   const total = quote?.total ?? 0;
+  const itemCount = cart.reduce((sum, line) => sum + line.quantity, 0);
   const canPay = cart.length > 0 && quote !== null && !paying;
   const linklyNeedsPair =
     cardProvider === "LINKLY" && cardTerminalEnabled && !linklyPaired;
@@ -94,13 +85,15 @@ export function CurrentOrderSidebar({
   const canPayCash = canPay && cashEnabled;
 
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl bg-surface-container">
-      <div className="shrink-0 p-2 pb-1.5">
+    <aside className="glass-panel relative flex min-h-0 flex-col overflow-hidden rounded-2xl">
+      <div className="shrink-0 space-y-3 border-b border-white/10 p-4">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-bold">Current order</h2>
+          <h2 className="text-base font-semibold tracking-tight text-zinc-50">
+            Current order
+          </h2>
           {cart.length > 0 ? (
             <button
-              className="text-xs font-semibold text-outline underline-offset-2 hover:text-red-200 hover:underline"
+              className="text-xs font-medium text-zinc-400 transition hover:text-rose-300"
               type="button"
               onClick={onClear}
             >
@@ -109,7 +102,7 @@ export function CurrentOrderSidebar({
           ) : null}
         </div>
 
-        <div className="mt-2 grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-3 gap-2 rounded-xl bg-black/30 p-1 ring-1 ring-white/10">
           {FULFILLMENT_OPTIONS.map((option) => {
             const active = fulfillmentType === option.value;
 
@@ -117,126 +110,157 @@ export function CurrentOrderSidebar({
               <button
                 key={option.value}
                 className={cn(
-                  "min-h-touch rounded-lg px-1 py-1.5 text-xs font-bold tracking-wide",
-                  active
-                    ? option.activeClass
-                    : "bg-surface text-on-surface/80",
+                  "relative min-h-touch rounded-lg px-1 py-2 text-xs font-semibold tracking-wide",
+                  active ? "text-white" : "text-zinc-400 hover:text-zinc-200",
                 )}
                 type="button"
                 onClick={() => onFulfillmentChange(option.value)}
               >
-                {option.label}
+                {active ? (
+                  <motion.span
+                    layoutId="pos-fulfillment-pill"
+                    className="absolute inset-0 rounded-lg bg-gradient-to-r from-rose-500/90 to-violet-500/90 shadow-pay-glow"
+                    transition={{ type: "spring", stiffness: 400, damping: 34 }}
+                  />
+                ) : null}
+                <span className="relative z-10">{option.label}</span>
               </button>
             );
           })}
         </div>
 
         {lastTicket ? (
-          <p className="mt-1.5 rounded-lg bg-surface px-2 py-1 text-xs font-semibold text-green-200">
+          <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 ring-1 ring-emerald-500/20">
             Last ticket #{lastTicket} paid
           </p>
         ) : null}
       </div>
 
-      <div className="pos-scrollbar min-h-0 flex-1 overflow-y-auto px-2">
-        <div className="space-y-2 rounded-xl bg-surface p-2">
-          {cart.length === 0 ? (
-            <p className="py-4 text-center text-xs font-medium text-outline">
-              Tap menu items to add them here.
+      <div className="pos-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        {cart.length === 0 ? (
+          <div className="flex h-full min-h-[8rem] flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-4 text-center">
+            <p className="text-sm font-medium text-zinc-400">
+              Tap menu items to build the order
             </p>
-          ) : (
-            cart.map((line) => (
-              <div
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {cart.map((line) => (
+              <li
                 key={line.key}
-                className="border-b border-white/5 pb-2 last:border-b-0 last:pb-0"
+                className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
               >
-                <div className="flex items-start justify-between gap-1">
+                <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold leading-snug">{line.name}</p>
+                    <p className="text-sm font-semibold leading-snug text-zinc-100">
+                      {line.name}
+                    </p>
                     {line.detail ? (
-                      <p className="mt-0.5 text-xs font-medium text-outline">
+                      <p className="mt-0.5 text-xs leading-relaxed text-zinc-400">
                         {line.detail}
                       </p>
                     ) : null}
-                    <p className="mt-0.5 text-xs font-medium text-outline">
-                      {formatAud(line.unitPrice)} ea ·{" "}
-                      <span className="text-on-surface/70">
-                        {formatAud(line.unitPrice * line.quantity)}
-                      </span>
+                    <p className="mt-1 font-mono text-xs tabular-nums text-zinc-500">
+                      {formatAud(line.unitPrice)} ea
                     </p>
                   </div>
-                  <button
-                    aria-label={`Remove ${line.name}`}
-                    className="flex min-h-touch min-w-touch shrink-0 items-center justify-center rounded-lg text-red-300 transition active:bg-red-500/10"
-                    type="button"
-                    onClick={() => onRemove(line.key)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex flex-col items-end gap-2">
+                    <p className="font-mono text-sm font-semibold tabular-nums text-zinc-100">
+                      {formatAud(line.unitPrice * line.quantity)}
+                    </p>
+                    <button
+                      aria-label={`Remove ${line.name}`}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-rose-500/10 hover:text-rose-300"
+                      type="button"
+                      onClick={() => onRemove(line.key)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
 
-                <div className="mt-1.5 flex items-center justify-end gap-1.5">
-                  <button
-                    aria-label={`Decrease ${line.name}`}
-                    className="flex min-h-touch min-w-touch items-center justify-center rounded-lg bg-surface-container-high active:bg-surface-container"
-                    type="button"
-                    onClick={() => onDecrement(line.key)}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <span className="min-w-[1.5rem] text-center text-sm font-bold">
-                    {line.quantity}
-                  </span>
-                  <button
-                    aria-label={`Increase ${line.name}`}
-                    className="flex min-h-touch min-w-touch items-center justify-center rounded-lg bg-surface-container-high active:bg-surface-container"
-                    type="button"
-                    onClick={() => onIncrement(line.key)}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
+                <div className="mt-3 flex items-center justify-end">
+                  <div className="inline-flex items-center gap-0.5 rounded-full bg-zinc-950/70 p-0.5 ring-1 ring-white/10">
+                    <button
+                      aria-label={`Decrease ${line.name}`}
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 transition active:bg-white/10"
+                      type="button"
+                      onClick={() => onDecrement(line.key)}
+                    >
+                      <Minus className="h-4 w-4" />
+                    </button>
+                    <span className="min-w-[1.75rem] text-center font-mono text-sm font-semibold tabular-nums">
+                      {line.quantity}
+                    </span>
+                    <button
+                      aria-label={`Increase ${line.name}`}
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-300 transition active:bg-white/10"
+                      type="button"
+                      onClick={() => onIncrement(line.key)}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))
-          )}
-        </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
-      <div className="shrink-0 border-t border-white/10 bg-surface-container p-2 shadow-[0_-6px_16px_rgba(0,0,0,0.35)]">
+      <div className="shrink-0 space-y-3 border-t border-white/10 bg-zinc-950/40 p-4 backdrop-blur-md">
+        <AnimatePresence>
+          {payError ? (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              className="flex items-start gap-2.5 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2.5"
+              role="status"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-300" />
+              <p className="flex-1 text-xs leading-relaxed text-rose-100/90">
+                {payError}
+              </p>
+              {onDismissPayError ? (
+                <button
+                  aria-label="Dismiss message"
+                  className="rounded-md p-1 text-rose-200/70 transition hover:bg-rose-500/20 hover:text-rose-100"
+                  type="button"
+                  onClick={onDismissPayError}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
         {recoverOrderId && onRecoverCard ? (
-          <div className="mb-2 rounded-xl border border-amber-400/40 bg-amber-500/10 p-2.5">
+          <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3">
             <p className="text-xs font-semibold text-amber-100">
               Unresolved card payment
               {recoverTicket != null ? ` · Ticket #${recoverTicket}` : ""}
             </p>
             {recoverTxnRef ? (
-              <p className="mt-0.5 text-[11px] text-amber-200/80">
+              <p className="mt-0.5 font-mono text-[11px] text-amber-200/70">
                 TxnRef {recoverTxnRef}
               </p>
             ) : null}
             <button
-              className="mt-2 min-h-[2.75rem] w-full rounded-xl bg-amber-500 px-3 text-sm font-bold text-zinc-950 disabled:opacity-50"
+              className="mt-2.5 min-h-touch w-full rounded-xl bg-amber-400 px-3 text-sm font-semibold text-zinc-950 disabled:opacity-50"
               disabled={recovering || paying}
               type="button"
               onClick={onRecoverCard}
             >
-              {recovering
-                ? "Checking pinpad…"
-                : "Recover card payment"}
+              {recovering ? "Checking pinpad…" : "Recover card payment"}
             </button>
           </div>
         ) : null}
 
-        {payError ? (
-          <div className="mb-1.5">
-            <p className="text-xs font-medium text-red-300">{payError}</p>
-          </div>
-        ) : null}
-
-        {/* Customer name + notes */}
-        <div className="mb-2 flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <input
-            className="w-full rounded-lg border border-white/10 bg-surface px-2.5 py-2 text-xs font-medium text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-accent/60"
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-rose-500/40 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
             maxLength={60}
             placeholder="Order for… (customer name)"
             type="text"
@@ -244,66 +268,79 @@ export function CurrentOrderSidebar({
             onChange={(e) => onCustomerNameChange(e.target.value)}
           />
           <textarea
-            className="w-full resize-none rounded-lg border border-white/10 bg-surface px-2.5 py-2 text-xs font-medium text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-accent/60"
+            className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-rose-500/40 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
             maxLength={200}
-            placeholder="Order notes (e.g. no onions, extra sauce…)"
+            placeholder="Order notes"
             rows={2}
             value={orderNotes}
             onChange={(e) => onOrderNotesChange(e.target.value)}
           />
         </div>
 
-        <div className="mb-2 flex items-center justify-between rounded-lg bg-surface px-3 py-2">
-          <span className="text-xs font-semibold text-outline">
-            {cart.reduce((s, l) => s + l.quantity, 0)} item
-            {cart.reduce((s, l) => s + l.quantity, 0) !== 1 ? "s" : ""}
-          </span>
-          <span className="text-base font-bold text-on-surface">
+        <div className="flex items-end justify-between gap-3 rounded-xl bg-white/[0.04] px-3.5 py-3 ring-1 ring-white/10">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+              Subtotal
+            </p>
+            <p className="mt-0.5 text-xs text-zinc-400">
+              {itemCount} item{itemCount !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <p className="font-mono text-2xl font-semibold tabular-nums tracking-tight text-zinc-50">
             {formatAud(total)}
-          </span>
+          </p>
         </div>
 
         {linklyNeedsPair ? (
-          <p className="mb-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-center text-xs font-semibold text-amber-200">
+          <div className="flex items-center gap-2 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-200">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
             Pinpad not paired — ask manager
-          </p>
+          </div>
         ) : null}
 
-        {cardTerminalEnabled ? (
-          <button
-            className="flex min-h-[2.75rem] w-full flex-col items-center justify-center rounded-xl bg-accent px-3 text-white shadow-lg shadow-accent/30 transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!canPayCard}
-            type="button"
-            onClick={onPayStripe}
-          >
-            <span className="text-sm font-bold tracking-tight">
-              {cardProvider === "STRIPE" ? "Pay with card (Stripe Terminal)" : "Pay with card / EFTPOS"}
-            </span>
-            <span className="text-xs font-semibold text-white/80">
-              {formatAud(total)}
-            </span>
-          </button>
-        ) : (
-          <p className="mb-1.5 rounded-lg bg-surface px-3 py-2 text-center text-xs text-outline">
-            Card terminal disabled for this store
-          </p>
-        )}
+        <div className="space-y-2">
+          {cardTerminalEnabled ? (
+            <button
+              className={cn(
+                "flex min-h-[3.25rem] w-full flex-col items-center justify-center rounded-2xl px-4 text-white",
+                "bg-pay-gradient shadow-pay-glow transition active:scale-[0.98]",
+                "disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none",
+              )}
+              disabled={!canPayCard}
+              type="button"
+              onClick={onPayStripe}
+            >
+              <span className="text-sm font-semibold tracking-tight">
+                {cardProvider === "STRIPE"
+                  ? "Pay with card (Stripe)"
+                  : "Pay with card / EFTPOS"}
+              </span>
+              <span className="font-mono text-xs font-medium tabular-nums text-white/85">
+                {formatAud(total)}
+              </span>
+            </button>
+          ) : (
+            <p className="rounded-xl bg-white/5 px-3 py-2 text-center text-xs text-zinc-500">
+              Card terminal disabled for this store
+            </p>
+          )}
 
-        {cashEnabled ? (
-          <button
-            className="mt-1.5 flex min-h-touch w-full items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-surface px-3 text-xs font-bold text-on-surface disabled:opacity-50"
-            disabled={!canPayCash}
-            type="button"
-            onClick={onPayCash}
-          >
-            <HandCoins className="h-3.5 w-3.5" />
-            Cash payment
-          </button>
-        ) : (
-          <p className="mt-1.5 rounded-lg bg-surface px-3 py-2 text-center text-xs text-outline">
-            Cash disabled for this store
-          </p>
-        )}
+          {cashEnabled ? (
+            <button
+              className="flex min-h-touch w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 text-sm font-semibold text-zinc-200 transition hover:bg-white/10 disabled:opacity-40"
+              disabled={!canPayCash}
+              type="button"
+              onClick={onPayCash}
+            >
+              <HandCoins className="h-4 w-4" />
+              Cash payment
+            </button>
+          ) : (
+            <p className="rounded-xl bg-white/5 px-3 py-2 text-center text-xs text-zinc-500">
+              Cash disabled for this store
+            </p>
+          )}
+        </div>
       </div>
     </aside>
   );

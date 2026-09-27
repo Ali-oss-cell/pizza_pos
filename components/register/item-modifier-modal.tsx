@@ -231,12 +231,12 @@ export function ItemModifierModal({
   });
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 p-2 sm:items-center sm:p-4">
-      <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-surface-container">
-        <div className="shrink-0 border-b border-white/10 px-4 py-3">
-          <h3 className="text-lg font-bold">{item.name}</h3>
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/75 p-2 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="glass-panel flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-zinc-950/80">
+        <div className="shrink-0 border-b border-white/10 px-4 py-3.5">
+          <h3 className="text-lg font-semibold text-zinc-50">{item.name}</h3>
           {lineDetail ? (
-            <p className="mt-1 text-sm font-medium text-outline">{lineDetail}</p>
+            <p className="mt-1 text-sm font-medium text-zinc-400">{lineDetail}</p>
           ) : null}
         </div>
 
@@ -383,37 +383,37 @@ export function ItemModifierModal({
           ) : null}
         </div>
 
-        <div className="shrink-0 border-t border-white/10 bg-surface-container p-4">
+        <div className="shrink-0 border-t border-white/10 bg-zinc-950/50 p-4 backdrop-blur-md">
           <div className="mb-3 flex items-center justify-between">
-            <span className="text-sm font-bold text-outline">Quantity</span>
-            <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-zinc-400">Quantity</span>
+            <div className="inline-flex items-center gap-0.5 rounded-full bg-zinc-950/70 p-0.5 ring-1 ring-white/10">
               <button
-                className="flex min-h-touch-lg min-w-touch-lg items-center justify-center rounded-xl bg-surface"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-300"
                 type="button"
                 onClick={() => setQuantity((value) => Math.max(1, value - 1))}
               >
-                <Minus className="h-5 w-5" />
+                <Minus className="h-4 w-4" />
               </button>
-              <span className="min-w-[2rem] text-center text-lg font-bold">
+              <span className="min-w-[2rem] text-center font-mono text-lg font-semibold tabular-nums">
                 {quantity}
               </span>
               <button
-                className="flex min-h-touch-lg min-w-touch-lg items-center justify-center rounded-xl bg-surface"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-300"
                 type="button"
                 onClick={() => setQuantity((value) => value + 1)}
               >
-                <Plus className="h-5 w-5" />
+                <Plus className="h-4 w-4" />
               </button>
             </div>
           </div>
 
           <button
-            className="flex min-h-touch-lg w-full flex-col items-center justify-center rounded-2xl bg-accent px-4 py-3 text-white disabled:opacity-60"
+            className="flex min-h-touch-lg w-full flex-col items-center justify-center rounded-2xl bg-pay-gradient px-4 py-3 text-white shadow-pay-glow disabled:opacity-60"
             disabled={quoting}
             type="button"
             onClick={handleAdd}
           >
-            <span className="text-base font-bold">
+            <span className="text-base font-semibold">
               Add to order · {formatAud(unitPrice * quantity)}
             </span>
             {quoting ? (
@@ -421,14 +421,14 @@ export function ItemModifierModal({
             ) : quoteError ? (
               <span className="text-xs text-white/80">{quoteError}</span>
             ) : (
-              <span className="text-xs text-white/80">
+              <span className="font-mono text-xs text-white/80">
                 {formatAud(unitPrice)} each
               </span>
             )}
           </button>
 
           <button
-            className="mt-2 min-h-touch w-full rounded-xl border border-white/10 text-sm font-semibold text-outline"
+            className="mt-2 min-h-touch w-full rounded-xl border border-white/10 text-sm font-semibold text-zinc-400 transition hover:bg-white/5 hover:text-zinc-200"
             type="button"
             onClick={onClose}
           >

@@ -1,8 +1,13 @@
-import { Montserrat } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 
-export const montserrat = Montserrat({
+export const bodyFont = Inter({
   variable: "--font-body",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+export const monoFont = JetBrains_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
   display: "swap",
 });

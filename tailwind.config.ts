@@ -9,30 +9,39 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        accent: "var(--color-accent, #FF2B79)",
-        "accent-dim": "#cc2261",
-        surface: "#131315",
-        "on-surface": "#e5e1e4",
-        "surface-container": "#201f21",
-        "surface-container-high": "#2a2a2c",
-        outline: "#ab888e",
+        accent: "var(--color-accent, #f43f5e)",
+        "accent-dim": "var(--color-accent-dim, #e11d48)",
+        surface: "#09090b",
+        "on-surface": "#f4f4f5",
+        "surface-container": "#18181b",
+        "surface-container-high": "#27272a",
+        outline: "#a1a1aa",
       },
       fontFamily: {
-        sans: ["var(--font-body)", "Montserrat", "system-ui", "sans-serif"],
-        display: ["TG Praktikal", "system-ui", "sans-serif"],
+        sans: ["var(--font-body)", "Inter", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+        display: ["var(--font-body)", "Inter", "system-ui", "sans-serif"],
+      },
+      boxShadow: {
+        glass: "0 8px 32px rgba(0,0,0,0.45)",
+        "pay-glow": "0 0 24px color-mix(in srgb, var(--color-accent, #f43f5e) 45%, transparent)",
+      },
+      backgroundImage: {
+        "pay-gradient":
+          "linear-gradient(135deg, var(--color-accent, #f43f5e) 0%, #a855f7 100%)",
       },
       minHeight: {
-        touch: "40px",
-        "touch-lg": "44px",
-        "category-tab": "40px",
+        touch: "44px",
+        "touch-lg": "48px",
+        "category-tab": "44px",
         "item-card": "80px",
       },
       minWidth: {
-        touch: "40px",
-        "touch-lg": "44px",
+        touch: "44px",
+        "touch-lg": "48px",
       },
       fontSize: {
-        "pos-item": ["0.9375rem", { lineHeight: "1.25", fontWeight: "700" }],
+        "pos-item": ["0.9375rem", { lineHeight: "1.25", fontWeight: "600" }],
         "pos-price": ["0.875rem", { lineHeight: "1.25", fontWeight: "600" }],
       },
     },

@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/lib/auth-context";
 import { StoreProvider } from "@/lib/store-context";
-import { montserrat } from "@/lib/fonts";
+import { bodyFont, monoFont } from "@/lib/fonts";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,7 +22,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>): React.ReactElement {
   return (
-    <html lang="en-AU" className={montserrat.variable} suppressHydrationWarning>
+    <html
+      lang="en-AU"
+      className={`${bodyFont.variable} ${monoFont.variable}`}
+      suppressHydrationWarning
+    >
       <body className="font-sans" suppressHydrationWarning>
         <AuthProvider>
           <StoreProvider>{children}</StoreProvider>
