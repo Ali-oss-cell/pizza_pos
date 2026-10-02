@@ -21,10 +21,13 @@ import {
 import type { AuthResponse, PosUser } from "@/types/auth";
 import { canAccessPos, normalizePosUser } from "@/types/auth";
 
+export const POS_ENTRY_CODE_KEY = "pos_entry_code";
+
 interface AuthContextValue {
   user: PosUser | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithPosCode: (code: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -80,6 +83,7 @@ export function AuthProvider({
 
   const logout = useCallback(() => {
     clearAuthSession();
+    sessionStorage.removeItem(POS_ENTRY_CODE_KEY);
     setUser(null);
     router.replace("/login");
   }, [router]);
@@ -123,9 +127,51 @@ export function AuthProvider({
     setUser(nextUser);
   }, []);
 
+  const loginWithPosCode = useCallback(async (code: string) => {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"}/auth/pos-code`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      },
+    );
+
+    if (!response.ok) {
+      let message = "That code is not recognised.";
+      try {
+        const body = (await response.json()) as { message?: string | string[] };
+        if (Array.isArray(body.message)) {
+          message = body.message[0] ?? message;
+        } else if (body.message) {
+          message = body.message;
+        }
+      } catch {
+        // ignore
+      }
+      throw new ApiError(message, response.status);
+    }
+
+    const data = (await response.json()) as AuthResponse;
+    const nextUser = normalizePosUser(data.user);
+
+    if (!canAccessPos(nextUser.role)) {
+      throw new ApiError("This code cannot open the register.", 403);
+    }
+
+    if (nextUser.posPinMustChange) {
+      sessionStorage.setItem(POS_ENTRY_CODE_KEY, code);
+    } else {
+      sessionStorage.removeItem(POS_ENTRY_CODE_KEY);
+    }
+
+    setAuthSession(data.accessToken, nextUser);
+    setUser(nextUser);
+  }, []);
+
   const value = useMemo(
-    () => ({ user, isLoading, login, logout }),
-    [user, isLoading, login, logout],
+    () => ({ user, isLoading, login, loginWithPosCode, logout }),
+    [user, isLoading, login, loginWithPosCode, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

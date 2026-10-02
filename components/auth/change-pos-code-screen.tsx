@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import { apiFetch, getAuthToken, setAuthSession } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
+import { POS_ENTRY_CODE_KEY, useAuth } from "@/lib/auth-context";
 import type { PosUser } from "@/types/auth";
 import { normalizePosUser } from "@/types/auth";
 
 export function ChangePosCodeScreen(): React.ReactElement | null {
   const { user } = useAuth();
+  const [knownCode] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return sessionStorage.getItem(POS_ENTRY_CODE_KEY) ?? "";
+  });
   const [currentPin, setCurrentPin] = useState("");
   const [nextPin, setNextPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -27,10 +31,12 @@ export function ChangePosCodeScreen(): React.ReactElement | null {
     setBusy(true);
     setError(null);
     try {
+      const startingCode = knownCode || currentPin;
       await apiFetch("/pos/auth/change-pin", {
         method: "POST",
-        body: JSON.stringify({ currentPin, newPin: nextPin }),
+        body: JSON.stringify({ currentPin: startingCode, newPin: nextPin }),
       });
+      sessionStorage.removeItem(POS_ENTRY_CODE_KEY);
       const token = getAuthToken();
       const nextUser = normalizePosUser({
         ...(user as PosUser),
@@ -60,23 +66,28 @@ export function ChangePosCodeScreen(): React.ReactElement | null {
           Change your POS code
         </h2>
         <p className="mt-2 text-sm text-zinc-400">
-          Enter the code your manager gave you, then choose a new one. You will
-          use the new code to unlock the register.
+          {knownCode
+            ? "Choose your own code. You will use it every time you sign in."
+            : "Enter the code your manager gave you, then choose a new one."}
         </p>
-        <label className="mt-5 block text-sm text-zinc-300">
-          Code from manager
-          <input
-            className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-center font-mono text-xl tracking-[0.4em]"
-            inputMode="numeric"
-            maxLength={6}
-            type="password"
-            value={currentPin}
-            onChange={(e) =>
-              setCurrentPin(e.target.value.replace(/\D/g, "").slice(0, 6))
-            }
-          />
-        </label>
-        <label className="mt-3 block text-sm text-zinc-300">
+        {knownCode ? null : (
+          <label className="mt-5 block text-sm text-zinc-300">
+            Code from manager
+            <input
+              className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-center font-mono text-xl tracking-[0.4em]"
+              inputMode="numeric"
+              maxLength={6}
+              type="password"
+              value={currentPin}
+              onChange={(e) =>
+                setCurrentPin(e.target.value.replace(/\D/g, "").slice(0, 6))
+              }
+            />
+          </label>
+        )}
+        <label
+          className={`${knownCode ? "mt-5" : "mt-3"} block text-sm text-zinc-300`}
+        >
           New code
           <input
             className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-center font-mono text-xl tracking-[0.4em]"
@@ -107,7 +118,7 @@ export function ChangePosCodeScreen(): React.ReactElement | null {
           className="mt-5 w-full rounded-2xl bg-pay-gradient py-3 text-sm font-semibold text-white disabled:opacity-50"
           disabled={
             busy ||
-            currentPin.length < 4 ||
+            (knownCode ? knownCode.length < 4 : currentPin.length < 4) ||
             nextPin.length < 4 ||
             confirmPin.length < 4
           }

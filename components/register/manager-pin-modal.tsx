@@ -111,14 +111,14 @@ export function StaffLockScreen(): React.ReactElement | null {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
           Register locked
         </p>
-        <h2 className="mt-2 text-2xl font-semibold text-zinc-50">Enter staff PIN</h2>
+        <h2 className="mt-2 text-2xl font-semibold text-zinc-50">Enter your POS code</h2>
         {activeStaff ? (
           <p className="mt-1 text-sm text-zinc-400">
             Last: {activeStaff.firstName} {activeStaff.lastName}
           </p>
         ) : (
           <p className="mt-1 text-sm text-zinc-400">
-            Set a PIN under Shift if none exists yet.
+            Use the code your manager gave you.
           </p>
         )}
         <input

@@ -123,7 +123,14 @@ export default function RegisterPage(): React.ReactElement {
     value: number;
   } | null>(null);
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [discountDraftType, setDiscountDraftType] = useState<
+    "PERCENT" | "AMOUNT" | "COMP"
+  >("PERCENT");
+  const [discountDraftValue, setDiscountDraftValue] = useState("10");
   const [recallOpen, setRecallOpen] = useState(false);
+  const [parkOpen, setParkOpen] = useState(false);
+  const [parkLabel, setParkLabel] = useState("");
   const [parked, setParked] = useState<ParkedOrder[]>([]);
   const [search, setSearch] = useState("");
   const [favouriteIds, setFavouriteIds] = useState<string[]>([]);
@@ -948,57 +955,16 @@ export default function RegisterPage(): React.ReactElement {
             setDiscountValue(value);
           }}
           onRequestDiscount={() => {
-            const raw = window.prompt(
-              "Discount: enter % (e.g. 10), $ amount (e.g. 5), or COMP",
-              discountType === "COMP"
-                ? "COMP"
-                : discountType === "PERCENT"
-                  ? String(discountValue)
-                  : discountType === "AMOUNT"
-                    ? `$${discountValue}`
-                    : "10",
+            setDiscountDraftType(discountType ?? "PERCENT");
+            setDiscountDraftValue(
+              discountType === "COMP" ? "" : String(discountValue || 10),
             );
-            if (raw == null) return;
-            const trimmed = raw.trim().toUpperCase();
-            if (trimmed === "COMP") {
-              setPendingDiscount({ type: "COMP", value: 0 });
-              setPinModalOpen(true);
-              return;
-            }
-            if (trimmed.startsWith("$")) {
-              setPendingDiscount({
-                type: "AMOUNT",
-                value: Number(trimmed.slice(1)) || 0,
-              });
-              setPinModalOpen(true);
-              return;
-            }
-            setPendingDiscount({
-              type: "PERCENT",
-              value: Number(trimmed) || 0,
-            });
-            setPinModalOpen(true);
+            setDiscountOpen(true);
           }}
           onPark={() => {
             if (!selectedLocation?.id || cart.length === 0) return;
-            const label =
-              window.prompt("Park as…", customerName || "Held order") ??
-              "Held order";
-            parkOrder(selectedLocation.id, {
-              label,
-              cart,
-              fulfillmentType,
-              customerName,
-              customerPhone,
-              orderNotes,
-              tableNumber,
-              pagerNumber,
-              discountType,
-              discountValue,
-              discountReason,
-            });
-            setParked(listParkedOrders(selectedLocation.id));
-            clearCart();
+            setParkLabel(customerName.trim());
+            setParkOpen(true);
           }}
           onOpenRecall={() => {
             if (selectedLocation?.id) {
@@ -1081,6 +1047,89 @@ export default function RegisterPage(): React.ReactElement {
         />
       </section>
 
+      {discountOpen ? (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-zinc-950/75 p-4 backdrop-blur-sm">
+          <form
+            className="glass-panel w-full max-w-md rounded-2xl p-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const value = Number(discountDraftValue) || 0;
+              if (discountDraftType !== "COMP" && value <= 0) return;
+              setPendingDiscount({
+                type: discountDraftType,
+                value: discountDraftType === "COMP" ? 0 : value,
+              });
+              setDiscountOpen(false);
+              setPinModalOpen(true);
+            }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              Manager approval
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-zinc-50">Discount</h3>
+            <p className="mt-1 text-sm text-zinc-400">
+              Choose a type, then a manager PIN is required.
+            </p>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {(
+                [
+                  ["PERCENT", "% off"],
+                  ["AMOUNT", "$ off"],
+                  ["COMP", "Comp"],
+                ] as const
+              ).map(([type, label]) => (
+                <button
+                  key={type}
+                  className={
+                    discountDraftType === type
+                      ? "rounded-xl bg-pay-gradient px-2 py-2.5 text-sm font-semibold text-white"
+                      : "rounded-xl border border-white/10 bg-white/5 px-2 py-2.5 text-sm font-semibold text-zinc-300"
+                  }
+                  type="button"
+                  onClick={() => setDiscountDraftType(type)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {discountDraftType !== "COMP" ? (
+              <label className="mt-4 block text-sm text-zinc-300">
+                {discountDraftType === "PERCENT" ? "Percent" : "Amount"}
+                <input
+                  autoFocus
+                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 font-mono text-lg text-zinc-50 outline-none focus:ring-2 focus:ring-rose-500/40"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
+                  type="number"
+                  value={discountDraftValue}
+                  onChange={(event) => setDiscountDraftValue(event.target.value)}
+                />
+              </label>
+            ) : (
+              <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-zinc-300">
+                Comp makes this order $0.
+              </p>
+            )}
+            <div className="mt-4 flex gap-2">
+              <button
+                className="flex-1 rounded-xl border border-white/10 px-3 py-2.5 text-sm font-semibold text-zinc-300"
+                type="button"
+                onClick={() => setDiscountOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="flex-1 rounded-xl bg-pay-gradient px-3 py-2.5 text-sm font-semibold text-white"
+                type="submit"
+              >
+                Continue
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       <ManagerPinModal
         open={pinModalOpen}
         title="Manager PIN for discount"
@@ -1099,6 +1148,68 @@ export default function RegisterPage(): React.ReactElement {
           setPinModalOpen(false);
         }}
       />
+
+      {parkOpen ? (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-zinc-950/75 p-4 backdrop-blur-sm">
+          <form
+            className="glass-panel w-full max-w-md rounded-2xl p-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selectedLocation?.id) return;
+              parkOrder(selectedLocation.id, {
+                label: parkLabel.trim() || customerName.trim() || "Held order",
+                cart,
+                fulfillmentType,
+                customerName,
+                customerPhone,
+                orderNotes,
+                tableNumber,
+                pagerNumber,
+                discountType,
+                discountValue,
+                discountReason,
+              });
+              setParked(listParkedOrders(selectedLocation.id));
+              setParkOpen(false);
+              clearCart();
+            }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+              Hold this order
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-zinc-50">Park order</h3>
+            <p className="mt-1 text-sm text-zinc-400">
+              The cart is saved on this register. Use Recall to bring it back.
+            </p>
+            <label className="mt-4 block text-sm text-zinc-300">
+              Name this hold
+              <input
+                autoFocus
+                className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-zinc-50 outline-none focus:ring-2 focus:ring-rose-500/40"
+                maxLength={60}
+                placeholder="Customer name or table"
+                value={parkLabel}
+                onChange={(event) => setParkLabel(event.target.value)}
+              />
+            </label>
+            <div className="mt-4 flex gap-2">
+              <button
+                className="flex-1 rounded-xl border border-white/10 px-3 py-2.5 text-sm font-semibold text-zinc-300"
+                type="button"
+                onClick={() => setParkOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="flex-1 rounded-xl bg-pay-gradient px-3 py-2.5 text-sm font-semibold text-white"
+                type="submit"
+              >
+                Park order
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {recallOpen ? (
         <div className="fixed inset-0 z-[65] flex items-end justify-center bg-zinc-950/70 p-4 backdrop-blur-sm sm:items-center">
@@ -1125,12 +1236,6 @@ export default function RegisterPage(): React.ReactElement {
                       className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-left"
                       type="button"
                       onClick={() => {
-                        if (
-                          cart.length > 0 &&
-                          !window.confirm("Replace current cart?")
-                        ) {
-                          return;
-                        }
                         setCart(entry.cart);
                         setFulfillmentType(entry.fulfillmentType);
                         setCustomerName(entry.customerName);
