@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Minus, Plus } from "lucide-react";
+import { Check, Minus, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import {
@@ -357,21 +357,51 @@ export function ItemModifierModal({
                   return (
                     <button
                       key={ingredient}
+                      aria-pressed={!isRemoved}
                       className={cn(
-                        "flex min-h-touch items-center justify-between rounded-xl border px-3 py-2.5 text-sm font-semibold",
+                        "flex min-h-touch items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold",
                         isRemoved
-                          ? "border-white/5 bg-white/[0.02] text-zinc-500 line-through"
+                          ? "border-white/5 bg-white/[0.02] text-zinc-500"
                           : "border-white/10 bg-white/[0.06] text-zinc-50",
                       )}
                       type="button"
                       onClick={() => toggleIngredient(ingredient)}
                     >
-                      <span className="text-left">{ingredient}</span>
-                      {isRemoved ? (
-                        <Plus className="h-4 w-4 shrink-0" />
-                      ) : (
-                        <Minus className="h-4 w-4 shrink-0 text-rose-300" />
-                      )}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={cn(
+                            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
+                            isRemoved
+                              ? "bg-zinc-700 text-zinc-300"
+                              : "bg-rose-500 text-white",
+                          )}
+                          aria-hidden
+                        >
+                          {isRemoved ? (
+                            <X className="h-3 w-3 stroke-[2.5]" />
+                          ) : (
+                            <Check className="h-3 w-3 stroke-[2.5]" />
+                          )}
+                        </span>
+                        <span
+                          className={cn(
+                            "truncate text-left",
+                            isRemoved && "line-through opacity-80",
+                          )}
+                        >
+                          {ingredient}
+                        </span>
+                      </span>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                          isRemoved
+                            ? "bg-zinc-800 text-zinc-400"
+                            : "bg-rose-500/20 text-rose-300",
+                        )}
+                      >
+                        {isRemoved ? "Removed" : "Included"}
+                      </span>
                     </button>
                   );
                 })}
