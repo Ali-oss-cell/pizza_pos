@@ -12,6 +12,7 @@ import {
 import { formatAud } from "@/lib/format";
 import { getDisplayPrice } from "@/lib/menu";
 import { calculateUnitPrice, normalizeQuoteResult, toMoney } from "@/lib/pricing";
+import { hasEnabledSizeOptions } from "@/lib/customizations";
 import { cn } from "@/lib/utils";
 import type { QuoteResult } from "@/types/cart";
 import type { CrustOption, ToppingCategory } from "@/types/customizations";
@@ -43,11 +44,14 @@ export function ItemModifierModal({
   onClose,
   onAdd,
 }: ItemModifierModalProps): React.ReactElement | null {
-  const showSizes = Boolean(category?.supportsSizeOptions && item.sizeOptions);
+  const showSizes = Boolean(
+    category?.supportsSizeOptions && hasEnabledSizeOptions(item.sizeOptions),
+  );
   const showCrust = showSizes && crustOptions.length > 0;
   const showExtras = toppingCategories.length > 0;
   const canRemoveIngredients = Boolean(
-    category?.supportsSizeOptions || category?.supportsExtras,
+    (category?.supportsSizeOptions || category?.supportsExtras) &&
+      (item.ingredients?.length ?? 0) > 0,
   );
   const ingredients = useMemo(
     () => (canRemoveIngredients ? resolveDefaultIngredients(item) : []),

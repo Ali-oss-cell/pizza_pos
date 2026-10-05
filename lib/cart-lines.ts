@@ -72,12 +72,7 @@ export function buildLineDetail(options: {
 }
 
 export function resolveDefaultIngredients(item: MenuItem): string[] {
-  if (item.ingredients.length > 0) {
-    return item.ingredients;
-  }
-
-  return item.description
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
+  // Only show removable ingredients when the catalog has explicit entries.
+  // Never split the description — that turns deal includes into fake toppings.
+  return item.ingredients ?? [];
 }

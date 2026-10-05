@@ -32,6 +32,7 @@ import {
   fetchCrustOptions,
   fetchToppingGroups,
   filterToppingsForItem,
+  hasEnabledSizeOptions,
   mapApiCrusts,
 } from "@/lib/customizations";
 import { fetchMenuCategories, fetchMenuItems } from "@/lib/menu";
@@ -541,7 +542,9 @@ export default function RegisterPage(): React.ReactElement {
     const category = categories.find(
       (entry) => entry.slug === item.categorySlug,
     );
-    const showSize = Boolean(category?.supportsSizeOptions && item.sizeOptions);
+    const showSize = Boolean(
+      category?.supportsSizeOptions && hasEnabledSizeOptions(item.sizeOptions),
+    );
     const showExtras = categoryHasExtras(item.categorySlug, categories);
 
     setModifierState({

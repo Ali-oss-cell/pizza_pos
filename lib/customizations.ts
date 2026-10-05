@@ -5,6 +5,7 @@ import type {
   ToppingCategory,
   ToppingCategoryGroup,
 } from "@/types/customizations";
+import type { SizeOptions } from "@/types/menu";
 
 export function fetchToppingGroups(): Promise<ToppingCategoryGroup[]> {
   return apiFetch<ToppingCategoryGroup[]>("/customizations/toppings");
@@ -73,5 +74,31 @@ export function categoryHasExtras(
     return false;
   }
 
-  return category.supportsExtras || category.supportsSizeOptions;
+  // Paid extras only when the category explicitly allows them (not every sized item).
+  return category.supportsExtras;
+}
+
+export function categoryHasSizes(
+  categorySlug: string,
+  categories: Array<{
+    slug: string;
+    supportsSizeOptions: boolean;
+  }>,
+): boolean {
+  const category = categories.find((entry) => entry.slug === categorySlug);
+  return Boolean(category?.supportsSizeOptions);
+}
+
+export function hasEnabledSizeOptions(
+  sizeOptions: SizeOptions | null | undefined,
+): boolean {
+  if (!sizeOptions) {
+    return false;
+  }
+  const raw = sizeOptions as SizeOptions &
+    Record<string, { enabled?: boolean; price?: number } | undefined>;
+  const small = raw.small ?? raw.SMALL;
+  const large = raw.large ?? raw.LARGE;
+  const family = raw.family ?? raw.FAMILY;
+  return Boolean(small?.enabled || large?.enabled || family?.enabled);
 }
