@@ -23,6 +23,7 @@ interface PosOrder {
   tableNumber?: string | null;
   pagerNumber?: string | null;
   channel?: string | null;
+  guestName?: string | null;
   notes?: string | null;
   createdAt: string;
   items: KitchenItem[];
@@ -89,7 +90,11 @@ function OrderCard({
             {order.fulfillmentType ?? "PICKUP"}
             {order.tableNumber ? ` · T${order.tableNumber}` : ""}
             {order.pagerNumber ? ` · P${order.pagerNumber}` : ""}
-            {order.channel && order.channel !== "POS" ? ` · ${order.channel}` : ""}
+            {order.channel === "WEB" ? " · Online" : null}
+            {order.channel && order.channel !== "POS" && order.channel !== "WEB"
+              ? ` · ${order.channel}`
+              : ""}
+            {order.guestName ? ` · ${order.guestName}` : ""}
           </p>
         </div>
         <TimeSince createdAt={order.createdAt} />

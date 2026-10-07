@@ -27,6 +27,8 @@ interface PosOrder {
   paymentStatus: string;
   paymentMethod?: string | null;
   fulfillmentType?: string | null;
+  channel?: string | null;
+  guestName?: string | null;
   notes?: string | null;
   total: string | number;
   createdAt: string;
@@ -390,9 +392,18 @@ export default function OrdersPage(): React.ReactElement {
                       <span className="ml-2 text-sm font-normal text-outline">
                         {order.fulfillmentType ?? "PICKUP"}
                       </span>
+                      {order.channel && order.channel !== "POS" ? (
+                        <span className="ml-2 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-300">
+                          {order.channel === "WEB" ? "Online" : order.channel}
+                        </span>
+                      ) : null}
                     </p>
                     <p className="text-xs text-outline">
                       {timeSince(order.createdAt)}
+                      {order.guestName ? ` · ${order.guestName}` : ""}
+                      {order.paymentMethod === "CARD_ONLINE"
+                        ? " · Stripe online"
+                        : ""}
                       {order.linklyTxnRef
                         ? ` · TxnRef ${order.linklyTxnRef}`
                         : ""}
