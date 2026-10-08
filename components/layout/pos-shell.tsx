@@ -1,17 +1,19 @@
 "use client";
 
 import { PaymentSyncBanner } from "@/components/layout/payment-sync-banner";
-import { ArrowLeft, LogOut, Menu, X } from "lucide-react";
+import { ArrowLeft, Globe, LogOut, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useStore } from "@/lib/store-context";
+import { useOnlineOrderAlerts } from "@/lib/use-online-order-alerts";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/register", label: "Register" },
+  { href: "/online", label: "Online orders" },
   { href: "/kitchen", label: "Kitchen" },
   { href: "/orders", label: "Orders" },
 ] as const;
@@ -31,6 +33,7 @@ export function PosShell({
   const { selectedStore, selectedLocation, clearSelection, stores } =
     useStore();
   const [menuOpen, setMenuOpen] = useState(false);
+  const onlineWaiting = useOnlineOrderAlerts(Boolean(selectedLocation));
   const [linklyPaired, setLinklyPaired] = useState<boolean | null>(null);
   const [cardTerminalEnabled, setCardTerminalEnabled] = useState(false);
 
@@ -155,6 +158,31 @@ export function PosShell({
             {pinpadLabel}
           </span>
         ) : null}
+        {/* Always visible so a web order is never missed from the register. */}
+        <Link
+          aria-label={
+            onlineWaiting > 0
+              ? `${onlineWaiting} online order${onlineWaiting === 1 ? "" : "s"} waiting`
+              : "Online orders"
+          }
+          className={cn(
+            "inline-flex min-h-touch shrink-0 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition",
+            onlineWaiting > 0
+              ? "animate-pulse bg-sky-500 text-white shadow-[0_0_18px_rgba(14,165,233,0.55)]"
+              : pathname === "/online"
+                ? "bg-white/10 text-zinc-50"
+                : "border border-white/10 bg-white/5 text-zinc-100 hover:bg-white/10",
+          )}
+          href="/online"
+        >
+          <Globe className="h-4 w-4" />
+          <span className="hidden sm:inline">Online</span>
+          {onlineWaiting > 0 ? (
+            <span className="rounded-full bg-white px-1.5 text-xs font-bold text-sky-700">
+              {onlineWaiting}
+            </span>
+          ) : null}
+        </Link>
         <a
           className="hidden rounded-xl border border-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-white/5 sm:inline"
           href="/customer-display"
@@ -218,7 +246,12 @@ export function PosShell({
                 href={item.href}
                 onClick={() => setMenuOpen(false)}
               >
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.href === "/online" && onlineWaiting > 0 ? (
+                  <span className="rounded-full bg-sky-500 px-2 py-0.5 text-xs font-bold text-white">
+                    {onlineWaiting}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

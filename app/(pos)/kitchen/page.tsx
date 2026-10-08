@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { toppingLabels } from "@/lib/online-orders";
 import { cn } from "@/lib/utils";
 
 interface KitchenItem {
@@ -10,7 +11,7 @@ interface KitchenItem {
   size?: string | null;
   crust?: string | null;
   notes?: string | null;
-  toppings?: Array<{ name: string }> | null;
+  toppings?: Array<string | { name?: string | null }> | null;
   removedIngredients?: string[] | null;
 }
 
@@ -108,9 +109,9 @@ function OrderCard({
               {item.size ? <span className="ml-1 font-normal text-outline">· {item.size}</span> : null}
               {item.crust ? <span className="ml-1 font-normal text-outline">· {item.crust}</span> : null}
             </p>
-            {item.toppings && item.toppings.length > 0 ? (
+            {toppingLabels(item).length > 0 ? (
               <p className="mt-0.5 text-xs text-emerald-400">
-                + {item.toppings.map((t) => t.name).join(", ")}
+                + {toppingLabels(item).join(", ")}
               </p>
             ) : null}
             {item.removedIngredients && item.removedIngredients.length > 0 ? (
