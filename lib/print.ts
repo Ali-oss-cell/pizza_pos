@@ -20,6 +20,10 @@ export interface PrintOrderPayload {
   pagerNumber?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
+  /** Online/phone orders: where it goes and when it's due. */
+  channelLabel?: string | null;
+  deliveryAddress?: string | null;
+  dueLabel?: string | null;
   notes?: string | null;
   items: PrintLineItem[];
   subtotal?: number;
@@ -103,7 +107,9 @@ export function buildKitchenTicketHtml(order: PrintOrderPayload): string {
   </style></head><body>
   ${order.isTraining ? `<div class="banner">TRAINING</div>` : ""}
   <h1>#${order.ticketNumber ?? "—"}</h1>
-  <div class="meta">${esc(order.fulfillmentType ?? "")}${order.tableNumber ? ` · T${esc(order.tableNumber)}` : ""}${order.pagerNumber ? ` · P${esc(order.pagerNumber)}` : ""}${order.customerName ? ` · ${esc(order.customerName)}` : ""}</div>
+  <div class="meta">${order.channelLabel ? `<strong>${esc(order.channelLabel)}</strong> · ` : ""}${esc(order.fulfillmentType ?? "")}${order.tableNumber ? ` · T${esc(order.tableNumber)}` : ""}${order.pagerNumber ? ` · P${esc(order.pagerNumber)}` : ""}${order.customerName ? ` · ${esc(order.customerName)}` : ""}${order.customerPhone ? ` · ${esc(order.customerPhone)}` : ""}</div>
+  ${order.dueLabel ? `<div class="banner">${esc(order.dueLabel)}</div>` : ""}
+  ${order.deliveryAddress ? `<p><strong>DELIVER TO:</strong> ${esc(order.deliveryAddress)}</p>` : ""}
   ${rows}
   ${order.notes ? `<p><strong>NOTES:</strong> ${esc(order.notes)}</p>` : ""}
   <script>window.onload=()=>{window.print();setTimeout(()=>window.close(),400)}</script>
@@ -111,8 +117,11 @@ export function buildKitchenTicketHtml(order: PrintOrderPayload): string {
 }
 
 export function openPrintWindow(html: string): void {
-  const w = window.open("", "_blank", "noopener,noreferrer,width=420,height=640");
+  /* No "noopener" in the features: with it, window.open returns null and
+     nothing was ever printed. Cut the back-reference by hand instead. */
+  const w = window.open("", "_blank", "width=420,height=640");
   if (!w) return;
+  w.opener = null;
   w.document.open();
   w.document.write(html);
   w.document.close();
