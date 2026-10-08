@@ -18,6 +18,7 @@ import {
   getStoredUser,
   setAuthSession,
 } from "@/lib/api";
+import { getDeviceStoreSlug } from "@/lib/store-session";
 import type { AuthResponse, PosUser } from "@/types/auth";
 import { canAccessPos, normalizePosUser } from "@/types/auth";
 
@@ -128,12 +129,19 @@ export function AuthProvider({
   }, []);
 
   const loginWithPosCode = useCallback(async (code: string) => {
+    const storeSlug = getDeviceStoreSlug();
+    if (!storeSlug) {
+      throw new ApiError(
+        "This register isn't set up yet. A manager must sign in with email once.",
+        400,
+      );
+    }
     const response = await fetch(
       `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api"}/auth/pos-code`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, storeSlug }),
       },
     );
 
