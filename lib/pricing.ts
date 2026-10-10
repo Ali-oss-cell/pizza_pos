@@ -51,7 +51,8 @@ export function buildLocalQuote(
     const quantity = line.quantity;
 
     return {
-      menuItemId: line.menuItemId,
+      type: line.type ?? "ITEM",
+      menuItemId: line.menuItemId || null,
       name: line.name,
       quantity,
       unitPrice,
@@ -60,6 +61,8 @@ export function buildLocalQuote(
       crust: line.crust,
       toppingIds: line.toppingIds,
       removedIngredients: line.removedIngredients,
+      comboDealId: line.comboDealId,
+      isComboHeader: line.type === "COMBO",
     };
   });
 

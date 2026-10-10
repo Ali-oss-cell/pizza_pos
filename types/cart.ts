@@ -1,6 +1,11 @@
+import type { ComboSelection } from "@/types/combo-deals";
+
 export interface CartLine {
   key: string;
+  type?: "ITEM" | "COMBO";
   menuItemId: string;
+  comboDealId?: string;
+  selections?: ComboSelection[];
   name: string;
   detail?: string;
   quantity: number;
@@ -12,7 +17,8 @@ export interface CartLine {
 }
 
 export interface QuoteLine {
-  menuItemId: string;
+  type?: "ITEM" | "COMBO";
+  menuItemId: string | null;
   name: string;
   quantity: number;
   unitPrice: number;
@@ -21,6 +27,8 @@ export interface QuoteLine {
   crust?: string;
   toppingIds?: string[];
   removedIngredients?: string[];
+  comboDealId?: string;
+  isComboHeader?: boolean;
 }
 
 export interface QuoteResult {
@@ -34,11 +42,25 @@ export interface QuoteResult {
 
 export type FulfillmentType = "PICKUP" | "DINE_IN" | "COUNTER";
 
-export interface QuoteItemInput {
-  menuItemId: string;
-  quantity: number;
-  size?: string;
-  crust?: string;
-  toppingIds?: string[];
-  removedIngredients?: string[];
-}
+export type QuoteItemInput =
+  | {
+      type?: "ITEM";
+      menuItemId: string;
+      quantity: number;
+      size?: string;
+      crust?: string;
+      toppingIds?: string[];
+      removedIngredients?: string[];
+    }
+  | {
+      type: "COMBO";
+      comboDealId: string;
+      selections: Array<{
+        slotId: string;
+        menuItemId: string;
+        size?: string;
+        crust?: string;
+        toppingIds?: string[];
+        removedIngredients?: string[];
+      }>;
+    };

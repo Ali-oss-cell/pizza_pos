@@ -1,3 +1,5 @@
+import type { CartLine, QuoteItemInput } from "@/types/cart";
+import type { ComboSelection } from "@/types/combo-deals";
 import type { MenuItem } from "@/types/menu";
 
 export interface CartAddPayload {
@@ -11,6 +13,58 @@ export interface CartAddPayload {
   toppingLabels: string[];
   removedIngredients: string[];
   unitPrice: number;
+}
+
+export interface ComboCartAddPayload {
+  comboDealId: string;
+  name: string;
+  unitPrice: number;
+  selections: ComboSelection[];
+  detail?: string;
+}
+
+export function cartLinesToQuoteItems(lines: CartLine[]): QuoteItemInput[] {
+  const items: QuoteItemInput[] = [];
+
+  for (const line of lines) {
+    if (line.type === "COMBO" && line.comboDealId && line.selections) {
+      for (let i = 0; i < line.quantity; i += 1) {
+        items.push({
+          type: "COMBO",
+          comboDealId: line.comboDealId,
+          selections: line.selections.map((selection) => ({
+            slotId: selection.slotId,
+            menuItemId: selection.menuItemId,
+            size: selection.size,
+            crust: selection.crust,
+            toppingIds:
+              selection.toppingIds.length > 0
+                ? selection.toppingIds
+                : undefined,
+            removedIngredients:
+              selection.removedIngredients.length > 0
+                ? selection.removedIngredients
+                : undefined,
+          })),
+        });
+      }
+      continue;
+    }
+
+    items.push({
+      menuItemId: line.menuItemId,
+      quantity: line.quantity,
+      size: line.size,
+      crust: line.crust,
+      toppingIds: line.toppingIds.length > 0 ? line.toppingIds : undefined,
+      removedIngredients:
+        line.removedIngredients.length > 0
+          ? line.removedIngredients
+          : undefined,
+    });
+  }
+
+  return items;
 }
 
 export function buildCartLineKey(payload: {

@@ -53,14 +53,29 @@ function throwIfInventoryShortage(error: unknown, orderId?: string): never {
 
 export interface PosOrderPayload {
   clientRequestId: string;
-  items: Array<{
-    menuItemId: string;
-    quantity: number;
-    size?: string;
-    crust?: string;
-    toppingIds?: string[];
-    removedIngredients?: string[];
-  }>;
+  items: Array<
+    | {
+        type?: "ITEM";
+        menuItemId: string;
+        quantity: number;
+        size?: string;
+        crust?: string;
+        toppingIds?: string[];
+        removedIngredients?: string[];
+      }
+    | {
+        type: "COMBO";
+        comboDealId: string;
+        selections: Array<{
+          slotId: string;
+          menuItemId: string;
+          size?: string;
+          crust?: string;
+          toppingIds?: string[];
+          removedIngredients?: string[];
+        }>;
+      }
+  >;
   fulfillmentType: FulfillmentType;
   notes?: string;
   customerName?: string;

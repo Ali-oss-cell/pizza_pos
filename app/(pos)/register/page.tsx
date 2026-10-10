@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CategoryPillNav } from "@/components/register/category-pill-nav";
+import { ComboConfiguratorModal } from "@/components/register/combo-configurator-modal";
 import { CurrentOrderSidebar } from "@/components/register/current-order-sidebar";
 import { ItemModifierModal } from "@/components/register/item-modifier-modal";
 import { ManagerPinModal } from "@/components/register/manager-pin-modal";
@@ -25,8 +26,11 @@ import { useAuth } from "@/lib/auth-context";
 import {
   buildCartLineKey,
   buildLineDetail,
+  cartLinesToQuoteItems,
   type CartAddPayload,
+  type ComboCartAddPayload,
 } from "@/lib/cart-lines";
+import { comboBundlePrice, fetchComboDeals } from "@/lib/combo-deals";
 import {
   categoryHasExtras,
   fetchCrustOptions,
@@ -56,6 +60,7 @@ import {
 } from "@/lib/linkly-payments";
 import { formatCardOutcomeMessage } from "@/lib/linkly-messages";
 import type { CartLine, FulfillmentType, QuoteResult } from "@/types/cart";
+import type { ComboDeal } from "@/types/combo-deals";
 import type {
   ApiCrustOption,
   CrustOption,
@@ -63,6 +68,8 @@ import type {
   ToppingCategoryGroup,
 } from "@/types/customizations";
 import type { MenuCategory, MenuItem } from "@/types/menu";
+
+const COMBOS_CATEGORY = "__combos__";
 
 interface ModifierState {
   item: MenuItem;
@@ -87,6 +94,7 @@ export default function RegisterPage(): React.ReactElement {
 
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
+  const [comboDeals, setComboDeals] = useState<ComboDeal[]>([]);
   const [toppingGroups, setToppingGroups] = useState<ToppingCategoryGroup[]>(
     [],
   );
@@ -99,6 +107,7 @@ export default function RegisterPage(): React.ReactElement {
   const [modifierState, setModifierState] = useState<ModifierState | null>(
     null,
   );
+  const [activeCombo, setActiveCombo] = useState<ComboDeal | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [payError, setPayError] = useState<string | null>(null);
@@ -153,6 +162,7 @@ export default function RegisterPage(): React.ReactElement {
       fetchMenuItems(),
       fetchToppingGroups(),
       fetchCrustOptions(),
+      fetchComboDeals().catch(() => [] as ComboDeal[]),
       apiFetch<{
         cashEnabled: boolean;
         cardTerminalEnabled: boolean;
@@ -160,18 +170,37 @@ export default function RegisterPage(): React.ReactElement {
         linklyPaired?: boolean;
       }>("/pos/payment-methods"),
     ])
-      .then(([nextCategories, nextItems, nextToppings, nextCrusts, methods]) => {
+      .then(([nextCategories, nextItems, nextToppings, nextCrusts, nextCombos, methods]) => {
         const activeCategories = nextCategories
-          .filter((category) => category.isActive)
+          .filter((category) => category.isActive && category.slug !== "deals")
           .sort(
             (a, b) =>
               a.sortOrder - b.sortOrder || a.label.localeCompare(b.label),
           );
+        const combos = (nextCombos as ComboDeal[]).filter((d) => d.isActive);
+        setComboDeals(combos);
 
-        setCategories(activeCategories);
+        const navCategories: MenuCategory[] = [
+          ...(combos.length > 0
+            ? [
+                {
+                  id: COMBOS_CATEGORY,
+                  slug: COMBOS_CATEGORY,
+                  label: "Combos",
+                  sortOrder: -1,
+                  supportsSizeOptions: false,
+                  supportsExtras: false,
+                  isActive: true,
+                } satisfies MenuCategory,
+              ]
+            : []),
+          ...activeCategories,
+        ];
+
+        setCategories(navCategories);
         setItems(
           nextItems
-            .filter((item) => item.isActive)
+            .filter((item) => item.isActive && item.categorySlug !== "deals")
             .map((item) => ({
               ...item,
               allowedToppingIds: item.allowedToppingIds ?? [],
@@ -179,7 +208,7 @@ export default function RegisterPage(): React.ReactElement {
         );
         setToppingGroups(nextToppings);
         setApiCrusts(nextCrusts);
-        setActiveCategory(activeCategories[0]?.slug ?? "");
+        setActiveCategory(navCategories[0]?.slug ?? "");
         setCashEnabled(methods.cashEnabled);
         setCardTerminalEnabled(methods.cardTerminalEnabled);
         setCardProvider(methods.provider ?? "NONE");
@@ -422,8 +451,28 @@ export default function RegisterPage(): React.ReactElement {
     [apiCrusts],
   );
 
+  const visibleCombos = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let list = comboDeals;
+    if (q) {
+      list = comboDeals.filter(
+        (deal) =>
+          deal.name.toLowerCase().includes(q) ||
+          deal.description.toLowerCase().includes(q),
+      );
+    } else if (activeCategory !== COMBOS_CATEGORY) {
+      return [];
+    }
+    return [...list].sort(
+      (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+    );
+  }, [comboDeals, activeCategory, search]);
+
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase();
+    if (!q && activeCategory === COMBOS_CATEGORY) {
+      return [];
+    }
     let list = items.filter((item) => item.categorySlug === activeCategory);
     if (q) {
       list = items.filter(
@@ -490,17 +539,7 @@ export default function RegisterPage(): React.ReactElement {
       const result = await apiFetch<QuoteResult>("/pos/orders/quote", {
         method: "POST",
         body: JSON.stringify({
-          items: lines.map((line) => ({
-            menuItemId: line.menuItemId,
-            quantity: line.quantity,
-            size: line.size,
-            crust: line.crust,
-            toppingIds: line.toppingIds.length > 0 ? line.toppingIds : undefined,
-            removedIngredients:
-              line.removedIngredients.length > 0
-                ? line.removedIngredients
-                : undefined,
-          })),
+          items: cartLinesToQuoteItems(lines),
           discount: discountPayload
             ? {
                 type: discountPayload.type,
@@ -587,6 +626,7 @@ export default function RegisterPage(): React.ReactElement {
         ...current,
         {
           key,
+          type: "ITEM",
           menuItemId: payload.menuItemId,
           name: payload.name,
           detail,
@@ -599,6 +639,29 @@ export default function RegisterPage(): React.ReactElement {
         },
       ];
     });
+    setPayError(null);
+  }
+
+  function addComboToCart(payload: ComboCartAddPayload) {
+    const key = `combo:${payload.comboDealId}:${Date.now()}:${Math.random()
+      .toString(36)
+      .slice(2, 7)}`;
+    setCart((current) => [
+      ...current,
+      {
+        key,
+        type: "COMBO",
+        menuItemId: "",
+        comboDealId: payload.comboDealId,
+        selections: payload.selections,
+        name: payload.name,
+        detail: payload.detail,
+        quantity: 1,
+        toppingIds: [],
+        removedIngredients: [],
+        unitPrice: payload.unitPrice,
+      },
+    ]);
     setPayError(null);
   }
 
@@ -817,17 +880,7 @@ export default function RegisterPage(): React.ReactElement {
 
     const payload: PosOrderPayload = {
       clientRequestId: createClientRequestId(),
-      items: cart.map((line) => ({
-        menuItemId: line.menuItemId,
-        quantity: line.quantity,
-        size: line.size,
-        crust: line.crust,
-        toppingIds: line.toppingIds.length > 0 ? line.toppingIds : undefined,
-        removedIngredients:
-          line.removedIngredients.length > 0
-            ? line.removedIngredients
-            : undefined,
-      })),
+      items: cartLinesToQuoteItems(cart),
       fulfillmentType,
       notes: orderNotes.trim() || undefined,
       customerName: customerName.trim() || undefined,
@@ -919,6 +972,38 @@ export default function RegisterPage(): React.ReactElement {
           />
 
           <div className="pos-scrollbar grid flex-1 auto-rows-max grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3 sm:gap-4 xl:grid-cols-4">
+            {visibleCombos.map((deal) => {
+              const inCartQty = cart
+                .filter((l) => l.comboDealId === deal.id)
+                .reduce((s, l) => s + l.quantity, 0);
+              const price = comboBundlePrice(deal);
+              return (
+                <button
+                  key={deal.id}
+                  className="relative flex min-h-[140px] flex-col justify-between rounded-2xl border border-rose-400/30 bg-gradient-to-br from-rose-500/20 to-violet-500/10 p-3 text-left"
+                  type="button"
+                  onClick={() => setActiveCombo(deal)}
+                >
+                  {inCartQty > 0 ? (
+                    <span className="absolute right-2 top-2 rounded-full bg-rose-500 px-2 py-0.5 text-xs font-bold text-white">
+                      {inCartQty}
+                    </span>
+                  ) : null}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-300">
+                      Combo
+                    </p>
+                    <p className="mt-1 font-semibold text-zinc-50">{deal.name}</p>
+                    <p className="mt-1 line-clamp-2 text-xs text-zinc-400">
+                      {deal.description}
+                    </p>
+                  </div>
+                  <p className="mt-2 text-sm font-bold text-white">
+                    ${price.toFixed(2)}
+                  </p>
+                </button>
+              );
+            })}
             {visibleItems.map((item) => {
               const inCartQty = cart
                 .filter((l) => l.menuItemId === item.id)
@@ -1279,6 +1364,16 @@ export default function RegisterPage(): React.ReactElement {
           toppingCategories={modifierState.toppingCategories}
           onAdd={addToCart}
           onClose={() => setModifierState(null)}
+        />
+      ) : null}
+
+      {activeCombo ? (
+        <ComboConfiguratorModal
+          deal={activeCombo}
+          menuItems={items}
+          open={Boolean(activeCombo)}
+          onAdd={addComboToCart}
+          onClose={() => setActiveCombo(null)}
         />
       ) : null}
 
