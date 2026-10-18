@@ -49,15 +49,29 @@ export function filterToppingsForItem(
     .filter((group) => group.toppings.length > 0);
 }
 
-export function mapApiCrusts(crusts: ApiCrustOption[]): CrustOption[] {
+/**
+ * Crust options for one menu item. When `categorySlug` is given, a crust's
+ * per-category surcharge (e.g. gluten-free +$3 on Basic) replaces its default.
+ */
+export function mapApiCrusts(
+  crusts: ApiCrustOption[],
+  categorySlug?: string,
+): CrustOption[] {
   return crusts
     .filter((crust) => crust.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label))
-    .map((crust) => ({
-      id: crust.slug,
-      label: crust.label,
-      priceDelta: Number(crust.priceDelta),
-    }));
+    .map((crust) => {
+      const override =
+        categorySlug && crust.categoryPriceDeltas
+          ? crust.categoryPriceDeltas[categorySlug]
+          : undefined;
+      return {
+        id: crust.slug,
+        label: crust.label,
+        priceDelta:
+          typeof override === "number" ? override : Number(crust.priceDelta),
+      };
+    });
 }
 
 export function categoryHasExtras(

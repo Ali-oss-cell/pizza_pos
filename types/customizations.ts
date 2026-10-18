@@ -33,6 +33,8 @@ export interface ApiCrustOption {
   slug: string;
   label: string;
   priceDelta: string | number;
+  /** Optional surcharge override per menu category slug. */
+  categoryPriceDeltas?: Record<string, number> | null;
   sortOrder: number;
   isActive: boolean;
 }

@@ -446,10 +446,6 @@ export default function RegisterPage(): React.ReactElement {
     return () => window.clearInterval(timer);
   }, [cardPaying]);
 
-  const crustOptions = useMemo(
-    () => mapApiCrusts(apiCrusts),
-    [apiCrusts],
-  );
 
   const visibleCombos = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -589,7 +585,9 @@ export default function RegisterPage(): React.ReactElement {
     setModifierState({
       item,
       category,
-      crustOptions: showSize ? crustOptions : [],
+      crustOptions: showSize
+        ? mapApiCrusts(apiCrusts, item.categorySlug)
+        : [],
       toppingCategories: showExtras
         ? filterToppingsForItem(toppingGroups, item.allowedToppingIds ?? [])
         : [],
