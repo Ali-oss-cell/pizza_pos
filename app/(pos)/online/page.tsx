@@ -105,18 +105,23 @@ function OnlineOrderCard({
   now,
   busy,
   onAdvance,
+  onRefuse,
   onPrint,
 }: {
   order: OnlineOrder;
   now: number;
   busy: boolean;
   onAdvance: (order: OnlineOrder, status: string) => void;
+  onRefuse: (order: OnlineOrder, reason?: string) => void;
   onPrint: (order: OnlineOrder) => void;
 }): React.ReactElement {
   const delivery = isDelivery(order);
   const address = delivery ? formatAddress(order) : null;
   const action = nextAction(order);
   const waiting = order.status === "CONFIRMED" && !isScheduledLater(order, now);
+  const canRefuse = order.status === "CONFIRMED" || order.status === "PREPARING";
+  const [refuseOpen, setRefuseOpen] = useState(false);
+  const [refuseReason, setRefuseReason] = useState("");
 
   return (
     <article
@@ -197,7 +202,7 @@ function OnlineOrderCard({
         <span className="font-bold">{formatMoney(order.total)}</span>
       </div>
 
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         {action ? (
           <button
             className={cn(
@@ -211,6 +216,16 @@ function OnlineOrderCard({
             {busy ? "Saving…" : action.label}
           </button>
         ) : null}
+        {canRefuse ? (
+          <button
+            className="flex min-h-touch items-center justify-center rounded-xl border border-red-400/30 bg-red-500/10 px-3 text-sm font-bold text-red-200 disabled:opacity-50"
+            disabled={busy}
+            type="button"
+            onClick={() => setRefuseOpen(true)}
+          >
+            Refuse
+          </button>
+        ) : null}
         <button
           aria-label={`Print ticket #${order.ticketNumber ?? ""}`}
           className="flex min-h-touch min-w-touch items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-200"
@@ -220,6 +235,46 @@ function OnlineOrderCard({
           <Printer className="h-4 w-4" />
         </button>
       </div>
+
+      {refuseOpen ? (
+        <div className="mt-3 space-y-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3">
+          <p className="text-xs font-semibold text-red-100">
+            Refuse this order? The customer gets an apology email and a refund if they paid.
+          </p>
+          <input
+            className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white placeholder:text-zinc-500"
+            maxLength={500}
+            onChange={(e) => setRefuseReason(e.target.value)}
+            placeholder="Optional reason (staff only)"
+            value={refuseReason}
+          />
+          <div className="flex gap-2">
+            <button
+              className="flex min-h-touch flex-1 items-center justify-center rounded-xl bg-red-500 px-3 text-sm font-bold text-white disabled:opacity-50"
+              disabled={busy}
+              type="button"
+              onClick={() => {
+                onRefuse(order, refuseReason.trim() || undefined);
+                setRefuseOpen(false);
+                setRefuseReason("");
+              }}
+            >
+              Confirm refuse
+            </button>
+            <button
+              className="flex min-h-touch items-center justify-center rounded-xl border border-white/10 px-3 text-sm font-bold text-zinc-200"
+              disabled={busy}
+              type="button"
+              onClick={() => {
+                setRefuseOpen(false);
+                setRefuseReason("");
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -270,6 +325,24 @@ export default function OnlineOrdersPage(): React.ReactElement {
     } catch (advanceError) {
       setActionError(
         `#${order.ticketNumber ?? ""}: ${advanceError instanceof Error ? advanceError.message : "Could not update order"}`,
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function refuse(order: OnlineOrder, reason?: string) {
+    setBusyId(order.id);
+    setActionError(null);
+    try {
+      await apiFetch(`/pos/orders/${order.id}/refuse`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      });
+      setOrders((current) => current.filter((o) => o.id !== order.id));
+    } catch (refuseError) {
+      setActionError(
+        `#${order.ticketNumber ?? ""}: ${refuseError instanceof Error ? refuseError.message : "Could not refuse order"}`,
       );
     } finally {
       setBusyId(null);
@@ -444,6 +517,7 @@ export default function OnlineOrdersPage(): React.ReactElement {
                         order={order}
                         onAdvance={(o, status) => void advance(o, status)}
                         onPrint={print}
+                        onRefuse={(o, reason) => void refuse(o, reason)}
                       />
                     ))
                   )}

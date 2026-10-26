@@ -5,6 +5,15 @@ import { apiFetch } from "@/lib/api";
 import { toppingLabels } from "@/lib/online-orders";
 import { cn } from "@/lib/utils";
 
+function formatKitchenDue(scheduledAt: string): string {
+  const due = new Date(scheduledAt);
+  return `Due ${due.toLocaleTimeString("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Australia/Melbourne",
+  })}`;
+}
+
 interface KitchenItem {
   name: string;
   quantity: number;
@@ -25,6 +34,8 @@ interface PosOrder {
   pagerNumber?: string | null;
   channel?: string | null;
   guestName?: string | null;
+  guestPhone?: string | null;
+  scheduledAt?: string | null;
   notes?: string | null;
   createdAt: string;
   items: KitchenItem[];
@@ -82,21 +93,42 @@ function OrderCard({
   columnKey: string;
   onAdvance: (id: string, status: string) => void;
 }) {
+  const isOnline = order.channel === "WEB" || order.channel === "PHONE";
+
   return (
     <article className="rounded-xl border border-white/8 bg-surface p-3 shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-base font-bold leading-none">#{order.ticketNumber ?? "—"}</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="text-base font-bold leading-none">#{order.ticketNumber ?? "—"}</p>
+            {isOnline ? (
+              <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-200">
+                Online
+              </span>
+            ) : null}
+          </div>
           <p className="mt-0.5 text-xs font-medium text-outline">
             {order.fulfillmentType ?? "PICKUP"}
             {order.tableNumber ? ` · T${order.tableNumber}` : ""}
             {order.pagerNumber ? ` · P${order.pagerNumber}` : ""}
-            {order.channel === "WEB" ? " · Online" : null}
             {order.channel && order.channel !== "POS" && order.channel !== "WEB"
               ? ` · ${order.channel}`
               : ""}
             {order.guestName ? ` · ${order.guestName}` : ""}
           </p>
+          {isOnline && order.scheduledAt ? (
+            <p className="mt-1 text-xs font-semibold text-sky-200">
+              {formatKitchenDue(order.scheduledAt)}
+            </p>
+          ) : null}
+          {isOnline && order.guestPhone ? (
+            <a
+              className="mt-0.5 block text-xs text-zinc-300 underline-offset-2 hover:underline"
+              href={`tel:${order.guestPhone.replace(/\s+/g, "")}`}
+            >
+              {order.guestPhone}
+            </a>
+          ) : null}
         </div>
         <TimeSince createdAt={order.createdAt} />
       </div>
